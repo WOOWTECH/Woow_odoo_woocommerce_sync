@@ -30,17 +30,13 @@ class WcImportWizard(models.TransientModel):
     ], default='draft')
 
     def action_import(self):
-        """Fetch orders from WooCommerce API and queue them."""
-        ICP = self.env['ir.config_parameter'].sudo()
-        url = ICP.get_param('wc_order_sync.wc_url', '')
-        username = ICP.get_param('wc_order_sync.wc_username', '')
-        password = ICP.get_param('wc_order_sync.wc_password', '')
-
-        if not all([url, username, password]):
+        # Use base connector helper
+        mixin = self.env['wc.connection.mixin'].sudo()
+        wc_url, auth = mixin._get_wc_auth()
+        if not wc_url or not auth[0]:
             raise UserError("請先在設定中填寫 WooCommerce 連線資訊")
 
-        api_url = f"{url.rstrip('/')}/wp-json/wc/v3/orders"
-        auth = (username, password.replace(' ', ''))
+        api_url = f"{wc_url.rstrip('/')}/wp-json/wc/v3/orders"
         Queue = self.env['wc.sync.queue'].sudo()
 
         imported = 0
@@ -67,29 +63,18 @@ class WcImportWizard(models.TransientModel):
             try:
                 resp = requests.get(api_url, auth=auth, params=params, timeout=30)
                 if resp.status_code != 200:
-                    _logger.error("WC Import: API error %d: %s",
-                                  resp.status_code, resp.text[:200])
                     errors += 1
                     break
-
                 orders = resp.json()
                 if not orders:
                     break
-
                 for order_data in orders:
                     wc_id = order_data.get('id')
-                    # Check duplicate in queue or sale.order
-                    existing_queue = Queue.search([
-                        ('wc_order_id', '=', wc_id),
-                    ], limit=1)
-                    existing_so = self.env['sale.order'].sudo().search([
-                        ('wc_order_id', '=', wc_id),
-                    ], limit=1)
-
+                    existing_queue = Queue.search([('wc_order_id', '=', wc_id)], limit=1)
+                    existing_so = self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_id)], limit=1)
                     if existing_queue or existing_so:
                         skipped += 1
                         continue
-
                     Queue.create({
                         'wc_order_id': wc_id,
                         'wc_order_number': str(order_data.get('number', wc_id)),
@@ -100,17 +85,13 @@ class WcImportWizard(models.TransientModel):
                         'wc_status': order_data.get('status', ''),
                     })
                     imported += 1
-
                     if imported + skipped >= limit:
                         break
-
                 page += 1
                 total_pages = int(resp.headers.get('X-WP-TotalPages', 1))
                 if page > total_pages:
                     break
-
-            except requests.RequestException as e:
-                _logger.exception("WC Import: Request error on page %d", page)
+            except requests.RequestException:
                 errors += 1
                 break
 
@@ -120,10 +101,6 @@ class WcImportWizard(models.TransientModel):
             'error_count': errors,
             'state': 'done',
         })
-
-        _logger.info("WC Import: Done — imported=%d skipped=%d errors=%d",
-                     imported, skipped, errors)
-
         return {
             'type': 'ir.actions.act_window',
             'res_model': self._name,

@@ -5,6 +5,9 @@
         <field name="model">wc.sync.queue</field>
         <field name="arch" type="xml">
             <list decoration-danger="state=='error'" decoration-success="state=='done'" decoration-info="state=='pending'">
+                <header>
+                    <button name="action_manual_sync" type="object" string="手動同步" class="btn-primary"/>
+                </header>
                 <field name="create_date" string="接收時間"/>
                 <field name="wc_order_id"/>
                 <field name="wc_order_number"/>
@@ -59,13 +62,5 @@
         <field name="name">同步佇列</field>
         <field name="res_model">wc.sync.queue</field>
         <field name="view_mode">list,form</field>
-    </record>
-
-    <!-- Manual sync action (server action) -->
-    <record id="action_manual_sync" model="ir.actions.server">
-        <field name="name">手動同步</field>
-        <field name="model_id" ref="wc_order_sync.model_wc_sync_queue"/>
-        <field name="state">code</field>
-        <field name="code">model.action_manual_sync()</field>
     </record>
 </odoo>

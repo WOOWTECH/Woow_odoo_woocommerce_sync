@@ -1,49 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="res_config_settings_view_form_wc" model="ir.ui.view">
-        <field name="name">res.config.settings.view.form.wc</field>
+    <record id="res_config_settings_view_form_wc_sync" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.wc.sync</field>
         <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="inherit_id" ref="wc_base_connector.res_config_settings_view_form_wc_base"/>
         <field name="arch" type="xml">
-            <xpath expr="//form" position="inside">
-                <app data-string="WooCommerce" string="WooCommerce" data-key="wc_order_sync">
-                    <block title="WooCommerce 連線設定">
-                        <setting string="API 連線">
-                            <div class="content-group">
-                                <div class="row mt16">
-                                    <label for="wc_url" class="col-lg-3"/>
-                                    <field name="wc_url" class="col-lg-9" placeholder="https://www.inzense.com.tw"/>
-                                </div>
-                                <div class="row">
-                                    <label for="wc_username" class="col-lg-3"/>
-                                    <field name="wc_username" class="col-lg-9"/>
-                                </div>
-                                <div class="row">
-                                    <label for="wc_password" class="col-lg-3"/>
-                                    <field name="wc_password" class="col-lg-9" password="True"/>
-                                </div>
-                                <div class="row mt8">
-                                    <div class="col-lg-3"/>
-                                    <button name="action_test_wc_connection" type="object" string="測試連線" class="btn-primary"/>
-                                </div>
-                            </div>
-                        </setting>
-                    </block>
-                    <block title="同步設定">
-                        <setting string="Webhook 密鑰">
-                            <field name="wc_webhook_secret"/>
-                        </setting>
-                        <setting string="自動確認訂單">
-                            <field name="wc_auto_confirm"/>
-                        </setting>
-                        <setting string="自動扣庫存（completed 訂單自動驗證出貨單）">
-                            <field name="wc_auto_stock"/>
-                        </setting>
-                        <setting string="預設商品（無法匹配時使用）">
-                            <field name="wc_default_product_id"/>
-                        </setting>
-                    </block>
-                </app>
+            <xpath expr="//app[@name='wc_base_connector']" position="inside">
+                <block title="訂單同步設定">
+                    <setting string="Webhook 密鑰">
+                        <field name="wc_webhook_secret"/>
+                    </setting>
+                    <setting string="自動確認訂單">
+                        <field name="wc_auto_confirm"/>
+                    </setting>
+                    <setting string="自動扣庫存（completed 訂單自動驗證出貨單）">
+                        <field name="wc_auto_stock"/>
+                    </setting>
+                    <setting string="預設商品（無法匹配時使用）">
+                        <field name="wc_default_product_id"/>
+                    </setting>
+                </block>
             </xpath>
         </field>
     </record>
