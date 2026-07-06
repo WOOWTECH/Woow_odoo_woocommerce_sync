@@ -131,7 +131,7 @@ class WcSyncQueue(models.Model):
                     # Set done quantities
                     for move in picking.move_ids:
                         move.quantity = move.product_uom_qty
-                    picking.button_validate()
+                    picking.with_context(skip_sms=True, skip_backorder=True).button_validate()
                     _logger.info("WC Sync: Auto-validated picking %s for %s",
                                  picking.name, sale_order.name)
                 except Exception as e:
