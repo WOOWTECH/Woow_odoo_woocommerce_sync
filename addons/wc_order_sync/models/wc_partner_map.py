@@ -5,15 +5,16 @@ from odoo import fields, models
 class PartnerWcMap(models.Model):
     _name = 'partner.wc.map'
     _description = 'WooCommerce Partner Mapping'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'wc_customer_name'
 
-    wc_customer_name = fields.Char(string="WC 客戶名稱", required=True, index=True)
-    wc_customer_id = fields.Integer(string="WC 客戶 ID", index=True)
-    wc_email = fields.Char(string="WC Email")
-    wc_phone = fields.Char(string="WC 電話")
+    wc_customer_name = fields.Char(string="WC 客戶名稱", required=True, index=True, tracking=True)
+    wc_customer_id = fields.Integer(string="WC 客戶 ID", index=True, tracking=True)
+    wc_email = fields.Char(string="WC Email", tracking=True)
+    wc_phone = fields.Char(string="WC 電話", tracking=True)
     partner_id = fields.Many2one('res.partner', string="Odoo 聯絡人",
-                                 ondelete='set null')
-    auto_matched = fields.Boolean(string="自動匹配", default=False)
+                                 ondelete='set null', tracking=True)
+    auto_matched = fields.Boolean(string="自動匹配", default=False, tracking=True)
     last_order_date = fields.Datetime(string="最近訂單日期")
     order_count = fields.Integer(string="訂單數", compute='_compute_order_count')
 

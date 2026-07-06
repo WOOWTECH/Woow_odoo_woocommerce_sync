@@ -2,10 +2,10 @@
 {
     "name": "WooCommerce Order Sync",
     "author": "WoowTech",
-    "version": "18.0.2.0.0",
+    "version": "18.0.2.0.1",
     "summary": "Sync WooCommerce orders, customers, and products to Odoo",
     "license": "LGPL-3",
-    "depends": ["sale_management", "stock", "wc_base_connector"],
+    "depends": ["sale_management", "stock", "mail", "wc_base_connector"],
     "external_dependencies": {"python": ["requests"]},
     "data": [
         "security/ir.model.access.csv",
