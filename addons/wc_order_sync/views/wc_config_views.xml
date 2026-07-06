@@ -36,6 +36,9 @@
                         <setting string="自動確認訂單">
                             <field name="wc_auto_confirm"/>
                         </setting>
+                        <setting string="自動扣庫存（completed 訂單自動驗證出貨單）">
+                            <field name="wc_auto_stock"/>
+                        </setting>
                         <setting string="預設商品（無法匹配時使用）">
                             <field name="wc_default_product_id"/>
                         </setting>

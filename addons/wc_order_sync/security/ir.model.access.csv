@@ -1,4 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_wc_sync_queue_user,wc.sync.queue.user,model_wc_sync_queue,base.group_user,1,1,1,1
 access_product_wc_map_user,product.wc.map.user,model_product_wc_map,base.group_user,1,1,1,1
+access_partner_wc_map_user,partner.wc.map.user,model_partner_wc_map,base.group_user,1,1,1,1
 access_wc_import_wizard_user,wc.import.wizard.user,model_wc_import_wizard,base.group_user,1,1,1,1
