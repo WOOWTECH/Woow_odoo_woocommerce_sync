@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="wc_sync_menu_root" name="WooCommerce" sequence="25"
+              web_icon="wc_order_sync,static/description/icon.png"/>
+    <menuitem id="wc_sync_menu_queue" name="同步佇列" parent="wc_sync_menu_root"
+              action="wc_sync_queue_action" sequence="10"/>
+    <menuitem id="wc_sync_menu_product_map" name="商品對應表" parent="wc_sync_menu_root"
+              action="product_wc_map_action" sequence="20"/>
+    <menuitem id="wc_sync_menu_import" name="歷史匯入" parent="wc_sync_menu_root"
+              action="wc_import_wizard_action" sequence="30"/>
+    <menuitem id="wc_sync_menu_config" name="設定" parent="wc_sync_menu_root"
+              action="base.action_general_configuration" sequence="99"/>
+</odoo>

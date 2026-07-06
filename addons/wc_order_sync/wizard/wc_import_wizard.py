@@ -1,0 +1,133 @@
+# -*- coding: utf-8 -*-
+import json
+import logging
+import requests
+from odoo import api, fields, models
+from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
+
+class WcImportWizard(models.TransientModel):
+    _name = 'wc.import.wizard'
+    _description = 'WooCommerce Historical Order Import'
+
+    date_from = fields.Date(string="開始日期")
+    date_to = fields.Date(string="結束日期")
+    status_filter = fields.Selection([
+        ('completed', '已完成 (completed)'),
+        ('processing', '處理中 (processing)'),
+        ('any', '全部'),
+    ], default='completed', string="訂單狀態")
+    import_limit = fields.Integer(string="匯入上限", default=100,
+                                  help="0 = 無限制")
+    imported_count = fields.Integer(string="已匯入", readonly=True)
+    skipped_count = fields.Integer(string="已跳過 (重複)", readonly=True)
+    error_count = fields.Integer(string="錯誤", readonly=True)
+    state = fields.Selection([
+        ('draft', '設定'),
+        ('done', '完成'),
+    ], default='draft')
+
+    def action_import(self):
+        """Fetch orders from WooCommerce API and queue them."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        url = ICP.get_param('wc_order_sync.wc_url', '')
+        username = ICP.get_param('wc_order_sync.wc_username', '')
+        password = ICP.get_param('wc_order_sync.wc_password', '')
+
+        if not all([url, username, password]):
+            raise UserError("請先在設定中填寫 WooCommerce 連線資訊")
+
+        api_url = f"{url.rstrip('/')}/wp-json/wc/v3/orders"
+        auth = (username, password.replace(' ', ''))
+        Queue = self.env['wc.sync.queue'].sudo()
+
+        imported = 0
+        skipped = 0
+        errors = 0
+        page = 1
+        per_page = 100
+        limit = self.import_limit or 999999
+
+        while imported + skipped < limit:
+            params = {
+                'per_page': min(per_page, limit - imported - skipped),
+                'page': page,
+                'orderby': 'date',
+                'order': 'asc',
+            }
+            if self.status_filter and self.status_filter != 'any':
+                params['status'] = self.status_filter
+            if self.date_from:
+                params['after'] = f"{self.date_from}T00:00:00"
+            if self.date_to:
+                params['before'] = f"{self.date_to}T23:59:59"
+
+            try:
+                resp = requests.get(api_url, auth=auth, params=params, timeout=30)
+                if resp.status_code != 200:
+                    _logger.error("WC Import: API error %d: %s",
+                                  resp.status_code, resp.text[:200])
+                    errors += 1
+                    break
+
+                orders = resp.json()
+                if not orders:
+                    break
+
+                for order_data in orders:
+                    wc_id = order_data.get('id')
+                    # Check duplicate in queue or sale.order
+                    existing_queue = Queue.search([
+                        ('wc_order_id', '=', wc_id),
+                    ], limit=1)
+                    existing_so = self.env['sale.order'].sudo().search([
+                        ('wc_order_id', '=', wc_id),
+                    ], limit=1)
+
+                    if existing_queue or existing_so:
+                        skipped += 1
+                        continue
+
+                    Queue.create({
+                        'wc_order_id': wc_id,
+                        'wc_order_number': str(order_data.get('number', wc_id)),
+                        'payload': json.dumps(order_data),
+                        'state': 'pending',
+                        'wc_total': float(order_data.get('total', 0)),
+                        'wc_date': order_data.get('date_created', ''),
+                        'wc_status': order_data.get('status', ''),
+                    })
+                    imported += 1
+
+                    if imported + skipped >= limit:
+                        break
+
+                page += 1
+                total_pages = int(resp.headers.get('X-WP-TotalPages', 1))
+                if page > total_pages:
+                    break
+
+            except requests.RequestException as e:
+                _logger.exception("WC Import: Request error on page %d", page)
+                errors += 1
+                break
+
+        self.write({
+            'imported_count': imported,
+            'skipped_count': skipped,
+            'error_count': errors,
+            'state': 'done',
+        })
+
+        _logger.info("WC Import: Done — imported=%d skipped=%d errors=%d",
+                     imported, skipped, errors)
+
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
