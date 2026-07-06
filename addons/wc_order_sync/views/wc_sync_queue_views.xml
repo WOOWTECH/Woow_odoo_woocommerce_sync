@@ -5,9 +5,6 @@
         <field name="model">wc.sync.queue</field>
         <field name="arch" type="xml">
             <list decoration-danger="state=='error'" decoration-success="state=='done'" decoration-info="state=='pending'">
-                <header>
-                    <button name="action_manual_sync" type="object" string="手動同步" class="btn-primary"/>
-                </header>
                 <field name="create_date" string="接收時間"/>
                 <field name="wc_order_id"/>
                 <field name="wc_order_number"/>
