@@ -12,46 +12,40 @@ class WcImportWizard(models.TransientModel):
     _name = 'wc.import.wizard'
     _description = 'WooCommerce Historical Order Import'
 
-    date_from = fields.Date(string="開始日期")
-    date_to = fields.Date(string="結束日期")
+    date_from = fields.Date(string="Start Date")
+    date_to = fields.Date(string="End Date")
     status_filter = fields.Selection([
-        ('completed', '已完成 (completed)'),
-        ('processing', '處理中 (processing)'),
-        ('any', '全部'),
-    ], default='completed', string="訂單狀態")
-    import_limit = fields.Integer(string="匯入上限", default=100,
-                                  help="0 = 無限制")
-    imported_count = fields.Integer(string="已匯入", readonly=True)
-    skipped_count = fields.Integer(string="已跳過 (重複)", readonly=True)
-    error_count = fields.Integer(string="錯誤", readonly=True)
+        ('completed', 'Completed'),
+        ('processing', 'Processing'),
+        ('any', 'All'),
+    ], default='completed', string="Order Status")
+    import_limit = fields.Integer(string="Import Limit", default=100,
+                                  help="0 = unlimited")
+    imported_count = fields.Integer(string="Imported", readonly=True)
+    skipped_count = fields.Integer(string="Skipped (Duplicate)", readonly=True)
+    error_count = fields.Integer(string="Errors", readonly=True)
     state = fields.Selection([
-        ('draft', '設定'),
-        ('done', '完成'),
+        ('draft', 'Setup'),
+        ('done', 'Done'),
     ], default='draft')
 
     def action_import(self):
-        # Use base connector helper
         mixin = self.env['wc.connection.mixin'].sudo()
         wc_url, auth = mixin._get_wc_auth()
         if not wc_url or not auth[0]:
-            raise UserError("請先在設定中填寫 WooCommerce 連線資訊")
-
+            raise UserError("Please fill in WooCommerce connection settings first")
         api_url = f"{wc_url.rstrip('/')}/wp-json/wc/v3/orders"
         Queue = self.env['wc.sync.queue'].sudo()
-
         imported = 0
         skipped = 0
         errors = 0
         page = 1
         per_page = 100
         limit = self.import_limit or 999999
-
         while imported + skipped < limit:
             params = {
                 'per_page': min(per_page, limit - imported - skipped),
-                'page': page,
-                'orderby': 'date',
-                'order': 'asc',
+                'page': page, 'orderby': 'date', 'order': 'asc',
             }
             if self.status_filter and self.status_filter != 'any':
                 params['status'] = self.status_filter
@@ -59,7 +53,6 @@ class WcImportWizard(models.TransientModel):
                 params['after'] = f"{self.date_from}T00:00:00"
             if self.date_to:
                 params['before'] = f"{self.date_to}T23:59:59"
-
             try:
                 resp = requests.get(api_url, auth=auth, params=params, timeout=30)
                 if resp.status_code != 200:
@@ -70,9 +63,8 @@ class WcImportWizard(models.TransientModel):
                     break
                 for order_data in orders:
                     wc_id = order_data.get('id')
-                    existing_queue = Queue.search([('wc_order_id', '=', wc_id)], limit=1)
-                    existing_so = self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_id)], limit=1)
-                    if existing_queue or existing_so:
+                    if Queue.search([('wc_order_id', '=', wc_id)], limit=1) or \
+                       self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_id)], limit=1):
                         skipped += 1
                         continue
                     Queue.create({
@@ -88,23 +80,10 @@ class WcImportWizard(models.TransientModel):
                     if imported + skipped >= limit:
                         break
                 page += 1
-                total_pages = int(resp.headers.get('X-WP-TotalPages', 1))
-                if page > total_pages:
+                if page > int(resp.headers.get('X-WP-TotalPages', 1)):
                     break
             except requests.RequestException:
                 errors += 1
                 break
-
-        self.write({
-            'imported_count': imported,
-            'skipped_count': skipped,
-            'error_count': errors,
-            'state': 'done',
-        })
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': self._name,
-            'res_id': self.id,
-            'view_mode': 'form',
-            'target': 'new',
-        }
+        self.write({'imported_count': imported, 'skipped_count': skipped, 'error_count': errors, 'state': 'done'})
+        return {'type': 'ir.actions.act_window', 'res_model': self._name, 'res_id': self.id, 'view_mode': 'form', 'target': 'new'}

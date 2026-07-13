@@ -15,32 +15,31 @@ class WcSyncQueue(models.Model):
     wc_order_number = fields.Char(string="WC Order Number")
     payload = fields.Text(string="JSON Payload")
     state = fields.Selection([
-        ('pending', '待處理'),
-        ('processing', '處理中'),
-        ('done', '完成'),
-        ('error', '錯誤'),
-    ], default='pending', string="狀態", index=True)
-    error_message = fields.Text(string="錯誤訊息")
-    sale_order_id = fields.Many2one('sale.order', string="銷售訂單")
-    partner_id = fields.Many2one('res.partner', string="客戶")
-    attempts = fields.Integer(default=0, string="嘗試次數")
-    wc_total = fields.Float(string="WC 訂單金額")
-    wc_date = fields.Char(string="WC 訂單日期")
-    wc_status = fields.Char(string="WC 訂單狀態")
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('done', 'Done'),
+        ('error', 'Error'),
+    ], default='pending', string="State", index=True)
+    error_message = fields.Text(string="Error Message")
+    sale_order_id = fields.Many2one('sale.order', string="Sale Order")
+    partner_id = fields.Many2one('res.partner', string="Customer")
+    attempts = fields.Integer(default=0, string="Attempts")
+    wc_total = fields.Float(string="WC Order Amount")
+    wc_date = fields.Char(string="WC Order Date")
+    wc_status = fields.Char(string="WC Order Status")
 
     def action_retry(self):
         self.write({'state': 'pending', 'error_message': False, 'attempts': 0})
 
     @api.model
     def action_manual_sync(self):
-        """Manual sync button — process all pending queue items now."""
         self._cron_process_queue()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': 'WooCommerce 同步',
-                'message': '手動同步已完成',
+                'title': 'WooCommerce Sync',
+                'message': 'Manual sync completed',
                 'type': 'success',
                 'sticky': False,
             }
@@ -74,20 +73,11 @@ class WcSyncQueue(models.Model):
 
     def _process_wc_order(self, data, queue_item):
         wc_order_id = data.get('id')
-        # 1. Check duplicate
-        existing = self.env['sale.order'].sudo().search([
-            ('wc_order_id', '=', wc_order_id),
-        ], limit=1)
+        existing = self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_order_id)], limit=1)
         if existing:
             return existing
-
-        # 2. Find or create customer + update partner mapping
         partner = self._find_or_create_partner(data)
-
-        # 3. Build order lines
         order_lines = self._build_order_lines(data)
-
-        # 4. Create sale order
         order_vals = {
             'partner_id': partner.id,
             'wc_order_id': wc_order_id,
@@ -97,46 +87,32 @@ class WcSyncQueue(models.Model):
             'order_line': order_lines,
             'note': self._build_note(data),
         }
-        pricelist = self.env['product.pricelist'].sudo().search([
-            ('currency_id.name', '=', 'TWD'),
-        ], limit=1)
+        pricelist = self.env['product.pricelist'].sudo().search([('currency_id.name', '=', 'TWD')], limit=1)
         if pricelist:
             order_vals['pricelist_id'] = pricelist.id
-
         sale_order = self.env['sale.order'].sudo().create(order_vals)
-
-        # 5. Auto-confirm
         ICP = self.env['ir.config_parameter'].sudo()
         auto_confirm = ICP.get_param('wc_order_sync.wc_auto_confirm', 'True')
         if auto_confirm in ('True', '1', 'true'):
             try:
                 sale_order.action_confirm()
             except Exception as e:
-                _logger.warning("WC Sync: Auto-confirm failed for %s: %s",
-                                sale_order.name, str(e)[:100])
-
-        # 6. Auto-validate picking (deduct stock) for completed orders
+                _logger.warning("WC Sync: Auto-confirm failed for %s: %s", sale_order.name, str(e)[:100])
         wc_status = data.get('status', '')
         auto_stock = ICP.get_param('wc_order_sync.wc_auto_stock', 'True')
         if wc_status == 'completed' and auto_stock in ('True', '1', 'true'):
             self._auto_validate_pickings(sale_order)
-
         return sale_order
 
     def _auto_validate_pickings(self, sale_order):
-        """Auto-validate delivery orders to deduct stock."""
         for picking in sale_order.picking_ids:
             if picking.state in ('confirmed', 'assigned', 'waiting'):
                 try:
-                    # Set done quantities
                     for move in picking.move_ids:
                         move.quantity = move.product_uom_qty
                     picking.with_context(skip_sms=True, skip_backorder=True).button_validate()
-                    _logger.info("WC Sync: Auto-validated picking %s for %s",
-                                 picking.name, sale_order.name)
                 except Exception as e:
-                    _logger.warning("WC Sync: Auto-validate picking failed for %s: %s",
-                                    sale_order.name, str(e)[:100])
+                    _logger.warning("WC Sync: Auto-validate picking failed for %s: %s", sale_order.name, str(e)[:100])
 
     def _find_or_create_partner(self, data):
         Partner = self.env['res.partner'].sudo()
@@ -146,55 +122,38 @@ class WcSyncQueue(models.Model):
         phone = billing.get('phone', '').strip()
         last_name = billing.get('last_name', '').strip()
         first_name = billing.get('first_name', '').strip()
-        name = f"{last_name}{first_name}".strip() or email or '未知客戶'
+        name = f"{last_name}{first_name}".strip() or email or 'Unknown Customer'
         wc_customer_id = data.get('customer_id', 0)
-
-        # Check partner mapping first
         if wc_customer_id:
             mapping = PartnerMap.search([('wc_customer_id', '=', wc_customer_id)], limit=1)
             if mapping and mapping.partner_id:
                 mapping.write({'last_order_date': fields.Datetime.now()})
                 return mapping.partner_id
-
         if email:
             mapping = PartnerMap.search([('wc_email', '=', email)], limit=1)
             if mapping and mapping.partner_id:
                 mapping.write({'last_order_date': fields.Datetime.now()})
                 return mapping.partner_id
-
-        # Search by email
         partner = False
         if email:
             partner = Partner.search([('email', '=', email)], limit=1)
         if not partner and phone:
-            partner = Partner.search([
-                '|', ('phone', '=', phone), ('mobile', '=', phone),
-            ], limit=1)
-        if not partner and name and name != '未知客戶':
-            partner = Partner.search([
-                ('name', '=', name), ('customer_rank', '>', 0),
-            ], limit=1)
-
+            partner = Partner.search(['|', ('phone', '=', phone), ('mobile', '=', phone)], limit=1)
+        if not partner and name and name != 'Unknown Customer':
+            partner = Partner.search([('name', '=', name), ('customer_rank', '>', 0)], limit=1)
         if not partner:
-            country_tw = self.env['res.country'].sudo().search(
-                [('code', '=', 'TW')], limit=1)
-            customer_tag = self.env['res.partner.category'].sudo().search(
-                [('name', '=', '客戶')], limit=1)
+            country_tw = self.env['res.country'].sudo().search([('code', '=', 'TW')], limit=1)
+            customer_tag = self.env['res.partner.category'].sudo().search([('name', '=', 'Customer')], limit=1)
+            if not customer_tag:
+                customer_tag = self.env['res.partner.category'].sudo().search([('name', 'ilike', 'customer')], limit=1)
             vals = {
-                'name': name,
-                'email': email or False,
-                'phone': phone or False,
-                'customer_rank': 1,
-                'lang': 'zh_TW',
-                'tz': 'Asia/Taipei',
+                'name': name, 'email': email or False, 'phone': phone or False,
+                'customer_rank': 1, 'lang': 'zh_TW', 'tz': 'Asia/Taipei',
                 'country_id': country_tw.id if country_tw else False,
             }
             if customer_tag:
                 vals['category_id'] = [(4, customer_tag.id)]
-            street_parts = []
-            for key in ('address_1', 'address_2'):
-                if billing.get(key):
-                    street_parts.append(billing[key])
+            street_parts = [billing.get(k) for k in ('address_1', 'address_2') if billing.get(k)]
             if street_parts:
                 vals['street'] = ' '.join(street_parts)
             if billing.get('city'):
@@ -202,26 +161,16 @@ class WcSyncQueue(models.Model):
             if billing.get('postcode'):
                 vals['zip'] = billing['postcode']
             partner = Partner.create(vals)
-
-        # Update/create partner mapping
         existing_map = PartnerMap.search([
-            '|', ('wc_customer_id', '=', wc_customer_id),
-            ('wc_email', '=', email),
+            '|', ('wc_customer_id', '=', wc_customer_id), ('wc_email', '=', email),
         ], limit=1) if (wc_customer_id or email) else False
         if existing_map:
-            existing_map.write({
-                'partner_id': partner.id,
-                'last_order_date': fields.Datetime.now(),
-            })
+            existing_map.write({'partner_id': partner.id, 'last_order_date': fields.Datetime.now()})
         else:
             PartnerMap.create({
-                'wc_customer_name': name,
-                'wc_customer_id': wc_customer_id,
-                'wc_email': email,
-                'wc_phone': phone,
-                'partner_id': partner.id,
-                'auto_matched': True,
-                'last_order_date': fields.Datetime.now(),
+                'wc_customer_name': name, 'wc_customer_id': wc_customer_id,
+                'wc_email': email, 'wc_phone': phone, 'partner_id': partner.id,
+                'auto_matched': True, 'last_order_date': fields.Datetime.now(),
             })
         return partner
 
@@ -229,8 +178,7 @@ class WcSyncQueue(models.Model):
         lines = []
         ProductMap = self.env['product.wc.map'].sudo()
         ICP = self.env['ir.config_parameter'].sudo()
-        default_product_id = int(ICP.get_param(
-            'wc_order_sync.wc_default_product_id', '0'))
+        default_product_id = int(ICP.get_param('wc_order_sync.wc_default_product_id', '0'))
         for item in data.get('line_items', []):
             wc_name = item.get('name', '')
             wc_product_id = item.get('product_id', 0)
@@ -239,9 +187,7 @@ class WcSyncQueue(models.Model):
             price_unit = total / qty if qty else total
             product = False
             mapping = ProductMap.search([
-                '|',
-                ('wc_product_id', '=', wc_product_id),
-                ('wc_product_name', '=', wc_name),
+                '|', ('wc_product_id', '=', wc_product_id), ('wc_product_name', '=', wc_name),
             ], limit=1)
             if mapping and mapping.product_id:
                 product = mapping.product_id
@@ -249,10 +195,8 @@ class WcSyncQueue(models.Model):
                 product = self._fuzzy_match_product(wc_name)
                 if product:
                     ProductMap.create({
-                        'wc_product_name': wc_name,
-                        'wc_product_id': wc_product_id,
-                        'product_id': product.id,
-                        'auto_matched': True,
+                        'wc_product_name': wc_name, 'wc_product_id': wc_product_id,
+                        'product_id': product.id, 'auto_matched': True,
                     })
             if not product and default_product_id:
                 product = self.env['product.product'].sudo().browse(default_product_id)
@@ -260,22 +204,15 @@ class WcSyncQueue(models.Model):
                     product = False
             if not product:
                 product = self.env['product.product'].sudo().create({
-                    'name': wc_name[:100],
-                    'type': 'service',
-                    'sale_ok': True,
-                    'list_price': price_unit,
+                    'name': wc_name[:100], 'type': 'service', 'sale_ok': True, 'list_price': price_unit,
                 })
                 ProductMap.create({
-                    'wc_product_name': wc_name,
-                    'wc_product_id': wc_product_id,
-                    'product_id': product.id,
-                    'auto_matched': True,
+                    'wc_product_name': wc_name, 'wc_product_id': wc_product_id,
+                    'product_id': product.id, 'auto_matched': True,
                 })
             lines.append((0, 0, {
-                'product_id': product.id,
-                'product_uom_qty': qty,
-                'price_unit': price_unit,
-                'name': wc_name,
+                'product_id': product.id, 'product_uom_qty': qty,
+                'price_unit': price_unit, 'name': wc_name,
             }))
         return lines
 
@@ -303,11 +240,11 @@ class WcSyncQueue(models.Model):
     def _build_note(self, data):
         parts = []
         if data.get('payment_method_title'):
-            parts.append(f"付款方式：{data['payment_method_title']}")
+            parts.append(f"Payment: {data['payment_method_title']}")
         if data.get('id'):
-            parts.append(f"WC 訂單 #{data['id']}")
+            parts.append(f"WC Order #{data['id']}")
         if data.get('customer_note'):
-            parts.append(f"客戶備註：{data['customer_note']}")
+            parts.append(f"Note: {data['customer_note']}")
         for coupon in data.get('coupon_lines', []):
-            parts.append(f"優惠券：{coupon.get('code', '')}")
+            parts.append(f"Coupon: {coupon.get('code', '')}")
         return '\n'.join(parts) if parts else ''

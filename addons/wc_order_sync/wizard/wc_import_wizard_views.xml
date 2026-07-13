@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
             <form>
                 <group invisible="state == 'done'">
-                    <group string="篩選條件">
+                    <group string="Filters">
                         <field name="date_from"/>
                         <field name="date_to"/>
                         <field name="status_filter"/>
@@ -14,7 +14,7 @@
                     </group>
                 </group>
                 <group invisible="state != 'done'">
-                    <group string="匯入結果">
+                    <group string="Import Results">
                         <field name="imported_count"/>
                         <field name="skipped_count"/>
                         <field name="error_count"/>
@@ -22,16 +22,15 @@
                 </group>
                 <field name="state" invisible="1"/>
                 <footer>
-                    <button name="action_import" type="object" string="開始匯入"
+                    <button name="action_import" type="object" string="Start Import"
                             class="btn-primary" invisible="state == 'done'"/>
-                    <button string="關閉" class="btn-secondary" special="cancel"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
         </field>
     </record>
-
     <record id="wc_import_wizard_action" model="ir.actions.act_window">
-        <field name="name">WooCommerce 歷史訂單匯入</field>
+        <field name="name">WooCommerce Historical Import</field>
         <field name="res_model">wc.import.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>

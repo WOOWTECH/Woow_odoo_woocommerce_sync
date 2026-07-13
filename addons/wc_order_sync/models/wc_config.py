@@ -18,22 +18,23 @@ class ResConfigSettings(models.TransientModel):
         string="Auto-deduct Stock",
         config_parameter='wc_order_sync.wc_auto_stock',
         default=True,
+        help="Automatically validate delivery orders for completed WC orders to deduct stock",
     )
     wc_default_product_id = fields.Many2one(
         'product.product',
         string="Default Product",
         config_parameter='wc_order_sync.wc_default_product_id',
+        help="Fallback product when WC product cannot be matched",
     )
 
     def action_manual_sync(self):
-        """Trigger manual sync from settings page."""
         self.env['wc.sync.queue'].sudo()._cron_process_queue()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': 'WooCommerce',
-                'message': '手動同步已完成',
+                'message': 'Manual sync completed',
                 'type': 'success',
                 'sticky': False,
             }

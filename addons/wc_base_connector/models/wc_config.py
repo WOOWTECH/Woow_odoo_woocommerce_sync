@@ -29,7 +29,7 @@ class ResConfigSettings(models.TransientModel):
         username = ICP.get_param('wc_base_connector.wc_username', '')
         password = ICP.get_param('wc_base_connector.wc_password', '')
         if not all([url, username, password]):
-            return self._wc_notify("請先填寫 WooCommerce 連線資訊", 'danger')
+            return self._wc_notify("Please fill in WooCommerce connection settings first", 'danger')
         try:
             resp = requests.get(
                 f"{url.rstrip('/')}/wp-json/wc/v3/orders",
@@ -38,11 +38,11 @@ class ResConfigSettings(models.TransientModel):
             )
             if resp.status_code == 200:
                 total = resp.headers.get('X-WP-Total', '?')
-                return self._wc_notify(f"連線成功！WooCommerce 共有 {total} 筆訂單", 'success')
+                return self._wc_notify(f"Connection successful! WooCommerce has {total} orders", 'success')
             else:
-                return self._wc_notify(f"連線失敗：HTTP {resp.status_code}", 'danger')
+                return self._wc_notify(f"Connection failed: HTTP {resp.status_code}", 'danger')
         except Exception as e:
-            return self._wc_notify(f"連線錯誤：{str(e)[:100]}", 'danger')
+            return self._wc_notify(f"Connection error: {str(e)[:100]}", 'danger')
 
     def _wc_notify(self, message, notif_type='info'):
         return {

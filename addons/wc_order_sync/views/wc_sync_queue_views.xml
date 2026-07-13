@@ -5,11 +5,11 @@
         <field name="model">wc.sync.queue</field>
         <field name="arch" type="xml">
             <list decoration-danger="state=='error'" decoration-success="state=='done'" decoration-info="state=='pending'">
-                <field name="create_date" string="接收時間"/>
+                <field name="create_date" string="Received"/>
                 <field name="wc_order_id"/>
                 <field name="wc_order_number"/>
-                <field name="wc_date" string="訂單日期"/>
-                <field name="wc_total" string="金額"/>
+                <field name="wc_date" string="Order Date"/>
+                <field name="wc_total" string="Amount"/>
                 <field name="wc_status"/>
                 <field name="partner_id"/>
                 <field name="sale_order_id"/>
@@ -26,7 +26,7 @@
         <field name="arch" type="xml">
             <form>
                 <header>
-                    <button name="action_retry" type="object" string="重試" class="btn-primary" invisible="state != 'error'"/>
+                    <button name="action_retry" type="object" string="Retry" class="btn-primary" invisible="state != 'error'"/>
                     <field name="state" widget="statusbar" statusbar_visible="pending,processing,done"/>
                 </header>
                 <sheet>
@@ -44,10 +44,10 @@
                             <field name="attempts"/>
                         </group>
                     </group>
-                    <group string="錯誤訊息" invisible="not error_message">
+                    <group string="Error Message" invisible="not error_message">
                         <field name="error_message" nolabel="1"/>
                     </group>
-                    <group string="原始資料">
+                    <group string="Raw Data">
                         <field name="payload" nolabel="1" widget="text"/>
                     </group>
                 </sheet>
@@ -56,7 +56,7 @@
     </record>
 
     <record id="wc_sync_queue_action" model="ir.actions.act_window">
-        <field name="name">同步佇列</field>
+        <field name="name">Sync Queue</field>
         <field name="res_model">wc.sync.queue</field>
         <field name="view_mode">list,form</field>
     </record>

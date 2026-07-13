@@ -12,7 +12,6 @@
             </list>
         </field>
     </record>
-
     <record id="product_wc_map_form" model="ir.ui.view">
         <field name="name">product.wc.map.form</field>
         <field name="model">product.wc.map</field>
@@ -34,9 +33,8 @@
             </form>
         </field>
     </record>
-
     <record id="product_wc_map_action" model="ir.actions.act_window">
-        <field name="name">商品對應表</field>
+        <field name="name">Product Mapping</field>
         <field name="res_model">product.wc.map</field>
         <field name="view_mode">list,form</field>
     </record>
