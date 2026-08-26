@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+from datetime import timedelta
+
 import requests
 from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
+
+STUCK_PROCESSING_MINUTES = 30
+BACK_SYNC_PARAM = 'wc_order_sync.last_back_sync'
+WC_STATUSES_CANCEL_ODOO = ('cancelled', 'refunded', 'failed')
 
 
 class WcSyncQueue(models.Model):
@@ -112,7 +118,9 @@ class WcSyncQueue(models.Model):
 
     @api.model
     def _cron_process_queue(self):
+        self._reset_stuck_processing()
         self._fetch_new_wc_orders()
+        self._back_sync_wc_status()
         pending = self.search([
             ('state', '=', 'pending'),
             ('attempts', '<', 5),
@@ -137,6 +145,87 @@ class WcSyncQueue(models.Model):
                 item.write({'state': 'error', 'error_message': str(e)[:500]})
                 self.env.cr.commit()
 
+    @api.model
+    def _reset_stuck_processing(self):
+        """Reset queue items stuck in 'processing' beyond threshold back to 'pending'."""
+        threshold = fields.Datetime.now() - timedelta(minutes=STUCK_PROCESSING_MINUTES)
+        stuck = self.search([
+            ('state', '=', 'processing'),
+            ('write_date', '<', threshold),
+        ])
+        if stuck:
+            _logger.warning("WC Sync: Resetting %d stuck 'processing' items", len(stuck))
+            stuck.write({'state': 'pending', 'error_message': 'auto-reset from stuck processing'})
+
+    @api.model
+    def _back_sync_wc_status(self):
+        """Fetch WC orders modified since last back-sync and update existing SO status
+        (cancel Odoo SO when WC becomes cancelled/refunded/failed)."""
+        try:
+            mixin = self.env['wc.connection.mixin'].sudo()
+            wc_url, auth = mixin._get_wc_auth()
+            if not wc_url or not auth[0]:
+                return 0
+            ICP = self.env['ir.config_parameter'].sudo()
+            SaleOrder = self.env['sale.order'].sudo()
+            last_run = ICP.get_param(BACK_SYNC_PARAM, '')
+            if not last_run:
+                # First run: only look back 7 days to avoid a huge fetch
+                last_run = (fields.Datetime.now() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
+            api_url = f"{wc_url.rstrip('/')}/wp-json/wc/v3/orders"
+            updated = 0
+            cancelled = 0
+            page = 1
+            new_last = fields.Datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+            while True:
+                params = {
+                    'per_page': 100, 'page': page,
+                    'orderby': 'modified', 'order': 'asc',
+                    'modified_after': last_run,
+                    # Include all statuses so we can detect cancellations
+                    'status': 'any',
+                }
+                resp = requests.get(api_url, auth=auth, params=params, timeout=30)
+                if resp.status_code != 200:
+                    _logger.warning("WC Back-sync: HTTP %s on page %d", resp.status_code, page)
+                    break
+                orders = resp.json()
+                if not orders:
+                    break
+                for order_data in orders:
+                    wc_id = order_data.get('id')
+                    wc_status = order_data.get('status', '')
+                    so = SaleOrder.search([('wc_order_id', '=', wc_id)], limit=1)
+                    if not so:
+                        continue
+                    changed = False
+                    if so.wc_order_status != wc_status:
+                        so.write({'wc_order_status': wc_status,
+                                  'wc_last_synced': fields.Datetime.now()})
+                        changed = True
+                    if wc_status in WC_STATUSES_CANCEL_ODOO and so.state != 'cancel':
+                        try:
+                            so._action_cancel() if hasattr(so, '_action_cancel') else so.action_cancel()
+                            cancelled += 1
+                            _logger.info("WC Back-sync: Cancelled %s (WC #%s status=%s)",
+                                         so.name, wc_id, wc_status)
+                        except Exception as e:
+                            _logger.warning("WC Back-sync: Cannot cancel %s: %s",
+                                            so.name, str(e)[:120])
+                    if changed:
+                        updated += 1
+                page += 1
+                total_pages = int(resp.headers.get('X-WP-TotalPages', 1))
+                if page > total_pages:
+                    break
+            ICP.set_param(BACK_SYNC_PARAM, new_last)
+            _logger.info("WC Back-sync: updated %d SOs (cancelled %d) since %s",
+                         updated, cancelled, last_run)
+            return updated
+        except Exception as e:
+            _logger.warning("WC Back-sync: Failed: %s", str(e)[:200])
+            return 0
+
     def _process_wc_order(self, data, queue_item):
         wc_order_id = data.get('id')
         existing = self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_order_id)], limit=1)
@@ -145,11 +234,19 @@ class WcSyncQueue(models.Model):
         wc_date = self._parse_wc_date(data.get('date_created', ''))
         partner = self._find_or_create_partner(data, wc_date)
         order_lines = self._build_order_lines(data)
+        order_lines += self._build_shipping_lines(data)
+        order_lines += self._build_fee_lines(data)
+        coupon_codes = ','.join(c.get('code', '') for c in data.get('coupon_lines', []) if c.get('code'))
         order_vals = {
             'partner_id': partner.id,
             'wc_order_id': wc_order_id,
             'wc_order_status': data.get('status', ''),
             'wc_payment_method': data.get('payment_method_title', ''),
+            'wc_shipping_total': float(data.get('shipping_total') or 0),
+            'wc_tax_total': float(data.get('total_tax') or 0),
+            'wc_discount_total': float(data.get('discount_total') or 0),
+            'wc_coupon_codes': coupon_codes or False,
+            'wc_last_synced': fields.Datetime.now(),
             'date_order': wc_date,
             'order_line': order_lines,
             'note': self._build_note(data),
@@ -276,7 +373,9 @@ class WcSyncQueue(models.Model):
                     product = False
             if not product:
                 product = self.env['product.product'].sudo().create({
-                    'name': wc_name[:100], 'type': 'service', 'sale_ok': True, 'list_price': price_unit,
+                    'name': wc_name[:100],
+                    'type': 'consu', 'is_storable': True,
+                    'sale_ok': True, 'list_price': price_unit,
                 })
                 ProductMap.create({
                     'wc_product_name': wc_name, 'wc_product_id': wc_product_id,
@@ -288,18 +387,89 @@ class WcSyncQueue(models.Model):
             }))
         return lines
 
+    def _build_shipping_lines(self, data):
+        lines = []
+        for sl in data.get('shipping_lines', []) or []:
+            method_title = sl.get('method_title') or sl.get('method_id') or 'Shipping'
+            total = float(sl.get('total') or 0)
+            if total <= 0:
+                continue
+            product = self._get_or_create_service_product(
+                name=method_title, code='WC-SHIPPING',
+                default_name='WooCommerce Shipping')
+            lines.append((0, 0, {
+                'product_id': product.id, 'product_uom_qty': 1,
+                'price_unit': total, 'name': f"[Shipping] {method_title}",
+            }))
+        return lines
+
+    def _build_fee_lines(self, data):
+        lines = []
+        for fl in data.get('fee_lines', []) or []:
+            fee_name = fl.get('name') or 'Fee'
+            total = float(fl.get('total') or 0)
+            if total == 0:
+                continue
+            product = self._get_or_create_service_product(
+                name=fee_name, code='WC-FEE',
+                default_name='WooCommerce Fee')
+            lines.append((0, 0, {
+                'product_id': product.id, 'product_uom_qty': 1,
+                'price_unit': total, 'name': f"[Fee] {fee_name}",
+            }))
+        return lines
+
+    def _get_or_create_service_product(self, name, code, default_name):
+        Product = self.env['product.product'].sudo()
+        product = Product.search([('default_code', '=', code)], limit=1)
+        if product:
+            return product
+        return Product.create({
+            'name': default_name, 'default_code': code,
+            'type': 'service', 'sale_ok': True, 'purchase_ok': False,
+            'list_price': 0.0, 'invoice_policy': 'order',
+        })
+
     def _fuzzy_match_product(self, wc_name):
         Product = self.env['product.product'].sudo()
         if not wc_name:
             return False
-        product = Product.search([('name', '=', wc_name)], limit=1)
-        if product:
-            return product
-        products = Product.search([('sale_ok', '=', True)], limit=500)
-        for p in products:
-            if p.name and len(p.name) > 3 and p.name in wc_name:
-                return p
+        # Prefer storable/consu goods over service so stock actually moves
+        for extra_domain in ([('type', '=', 'consu')], []):
+            product = Product.search([('name', '=', wc_name)] + extra_domain, limit=1)
+            if product:
+                return product
+        for extra_domain in ([('type', '=', 'consu')], []):
+            products = Product.search([('sale_ok', '=', True)] + extra_domain, limit=500)
+            for p in products:
+                if p.name and len(p.name) > 3 and p.name in wc_name:
+                    return p
         return False
+
+    @api.model
+    def bulk_retype_service_to_storable(self, product_ids=None, dry_run=True):
+        """Retype auto-matched service products (with no stock history) to storable goods.
+
+        Call from Odoo shell with a scoped list, e.g.:
+            env['wc.sync.queue'].bulk_retype_service_to_storable([497, 501], dry_run=False)
+
+        With dry_run=True, only reports what would change.
+        """
+        Product = self.env['product.product'].sudo()
+        domain = [('type', '=', 'service')]
+        if product_ids:
+            domain.append(('id', 'in', product_ids))
+        candidates = Product.search(domain)
+        safe = []
+        for p in candidates:
+            if self.env['stock.move'].sudo().search_count([('product_id', '=', p.id)]):
+                continue
+            safe.append(p.id)
+        _logger.info("WC bulk_retype: %d safe candidates (of %d requested), dry_run=%s",
+                     len(safe), len(candidates), dry_run)
+        if not dry_run and safe:
+            Product.browse(safe).write({'type': 'consu', 'is_storable': True})
+        return {'candidates': candidates.ids, 'safe': safe, 'applied': not dry_run}
 
     def _parse_wc_date(self, date_str):
         if not date_str:
