@@ -12,10 +12,20 @@ _logger = logging.getLogger(__name__)
 
 class WcWebhookController(http.Controller):
 
-    @http.route('/wc_sync/webhook', type='json', auth='none',
-                methods=['POST'], csrf=False)
-    def receive_webhook(self):
-        """Receive WooCommerce webhook and queue for processing."""
+    @http.route('/wc_sync/webhook', type='http', auth='none',
+                methods=['POST'], csrf=False, save_session=False)
+    def receive_webhook(self, **_kwargs):
+        """Receive WooCommerce webhook and queue for processing.
+
+        Uses type='http' (not 'json') because WooCommerce sends raw JSON,
+        not JSON-RPC 2.0 envelopes that Odoo's type='json' expects.
+        """
+        def _resp(payload, status=200):
+            return request.make_response(
+                json.dumps(payload),
+                headers=[('Content-Type', 'application/json')],
+                status=status,
+            )
         try:
             body = request.httprequest.get_data(as_text=True)
             headers = request.httprequest.headers
@@ -34,7 +44,7 @@ class WcWebhookController(http.Controller):
                 expected_b64 = base64.b64encode(expected).decode('utf-8')
                 if not hmac.compare_digest(signature, expected_b64):
                     _logger.warning("WC Webhook: Invalid signature")
-                    return {'status': 'error', 'message': 'invalid signature'}
+                    return _resp({'status': 'error', 'message': 'invalid signature'}, 401)
 
             data = json.loads(body)
 
@@ -42,7 +52,7 @@ class WcWebhookController(http.Controller):
             topic = headers.get('X-WC-Webhook-Topic', '')
             if not data.get('id') or topic == 'action.woocommerce_webhook_delivery':
                 _logger.info("WC Webhook: Ping received, topic=%s", topic)
-                return {'status': 'ok', 'message': 'ping acknowledged'}
+                return _resp({'status': 'ok', 'message': 'ping acknowledged'})
 
             wc_order_id = data.get('id')
             wc_status = data.get('status', '')
@@ -51,7 +61,7 @@ class WcWebhookController(http.Controller):
             if wc_status not in ('completed', 'processing', 'on-hold', ''):
                 _logger.info("WC Webhook: Skipping order #%s status=%s",
                              wc_order_id, wc_status)
-                return {'status': 'skipped', 'message': f'status {wc_status}'}
+                return _resp({'status': 'skipped', 'message': f'status {wc_status}'})
 
             # Check if already queued
             Queue = request.env['wc.sync.queue'].sudo()
@@ -62,7 +72,7 @@ class WcWebhookController(http.Controller):
             if existing:
                 _logger.info("WC Webhook: Order #%s already in queue (%s)",
                              wc_order_id, existing.state)
-                return {'status': 'duplicate', 'queue_id': existing.id}
+                return _resp({'status': 'duplicate', 'queue_id': existing.id})
 
             # Create queue item
             queue_item = Queue.create({
@@ -77,11 +87,11 @@ class WcWebhookController(http.Controller):
 
             _logger.info("WC Webhook: Queued order #%s (queue_id=%d)",
                          wc_order_id, queue_item.id)
-            return {'status': 'queued', 'queue_id': queue_item.id}
+            return _resp({'status': 'queued', 'queue_id': queue_item.id})
 
         except Exception as e:
             _logger.exception("WC Webhook: Error processing webhook")
-            return {'status': 'error', 'message': str(e)[:200]}
+            return _resp({'status': 'error', 'message': str(e)[:200]}, 500)
 
     @http.route('/wc_sync/health', type='http', auth='none',
                 methods=['GET'], csrf=False)
