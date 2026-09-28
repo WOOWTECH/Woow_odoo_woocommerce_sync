@@ -8,12 +8,12 @@
             <xpath expr="//app[@name='wc_base_connector']" position="inside">
                 <block title="Order Sync Settings">
                     <setting string="Webhook Secret">
-                        <field name="wc_webhook_secret"/>
+                        <field name="wc_webhook_secret" password="True"/>
                     </setting>
                     <setting string="Auto-confirm Orders">
                         <field name="wc_auto_confirm"/>
                     </setting>
-                    <setting string="Auto-deduct Stock (validate delivery for completed orders)">
+                    <setting string="Auto-deduct Stock (validate the delivery once WooCommerce reports the order shipped)">
                         <field name="wc_auto_stock"/>
                     </setting>
                     <setting string="Default Product (fallback when no match)">

@@ -43,7 +43,11 @@ class WcWebhookController(http.Controller):
                 import base64
                 expected_b64 = base64.b64encode(expected).decode('utf-8')
                 if not hmac.compare_digest(signature, expected_b64):
-                    _logger.warning("WC Webhook: Invalid signature")
+                    # Name the webhook, so a stale duplicate configured in WooCommerce
+                    # with an old secret can be found and removed there.
+                    _logger.warning("WC Webhook: Invalid signature (webhook id=%s, topic=%s, source=%s, delivery=%s)",
+                                    headers.get('X-WC-Webhook-ID', '?'), headers.get('X-WC-Webhook-Topic', '?'),
+                                    headers.get('X-WC-Webhook-Source', '?'), headers.get('X-WC-Webhook-Delivery-ID', '?'))
                     return _resp({'status': 'error', 'message': 'invalid signature'}, 401)
 
             data = json.loads(body)
@@ -94,14 +98,27 @@ class WcWebhookController(http.Controller):
             return _resp({'status': 'error', 'message': str(e)[:200]}, 500)
 
     @http.route('/wc_sync/health', type='http', auth='none',
-                methods=['GET'], csrf=False)
-    def health_check(self):
-        """Health check endpoint for monitoring."""
-        Queue = request.env['wc.sync.queue'].sudo()
-        pending = Queue.search_count([('state', '=', 'pending')])
-        errors = Queue.search_count([('state', '=', 'error')])
-        done = Queue.search_count([('state', '=', 'done')])
-        return json.dumps({
-            'status': 'ok',
-            'queue': {'pending': pending, 'errors': errors, 'done': done},
-        })
+                methods=['GET'], csrf=False, save_session=False)
+    def health_check(self, token=None, **_kwargs):
+        """Health check for an external monitor: /wc_sync/health?token=<health token>.
+
+        The token is the ir.config_parameter wc_order_sync.health_token (generated
+        on first use). Without it the endpoint only says it exists.
+        """
+        ICP = request.env['ir.config_parameter'].sudo()
+        expected = ICP.get_param('wc_order_sync.health_token', '')
+        if not expected:
+            import secrets
+            expected = secrets.token_urlsafe(24)
+            ICP.set_param('wc_order_sync.health_token', expected)
+        headers = [('Content-Type', 'application/json')]
+        if not token or not hmac.compare_digest(str(token), expected):
+            return request.make_response(json.dumps({'status': 'forbidden'}), headers=headers, status=403)
+        health = request.env['wc.sync.queue'].sudo()._wc_health()
+        max_fetch = float(ICP.get_param('wc_order_sync.watchdog_fetch_hours', '2'))
+        max_order = float(ICP.get_param('wc_order_sync.watchdog_order_hours', '24'))
+        healthy = (health['fetch_age_hours'] is not None and health['fetch_age_hours'] <= max_fetch
+                   and (health['last_order_age_hours'] is None or health['last_order_age_hours'] <= max_order)
+                   and not health['errors'])
+        return request.make_response(json.dumps(dict(health, status='ok' if healthy else 'degraded')),
+                                     headers=headers, status=200 if healthy else 503)

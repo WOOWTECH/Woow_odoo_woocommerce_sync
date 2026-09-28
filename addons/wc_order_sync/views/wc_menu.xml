@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <menuitem id="wc_sync_menu_root" name="WooCommerce" sequence="25"
+              web_icon="wc_order_sync,static/description/icon.png"
               groups="wc_base_connector.group_wc_user"/>
     <menuitem id="wc_sync_menu_queue" name="Sync Queue" parent="wc_sync_menu_root"
               action="wc_sync_queue_action" sequence="10"/>
