@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_order_form_wc" model="ir.ui.view">
+        <field name="name">sale.order.form.wc</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="WooCommerce" name="woocommerce" invisible="not wc_order_id">
+                    <group>
+                        <group string="Order">
+                            <field name="wc_order_id"/>
+                            <field name="wc_order_status"/>
+                            <field name="wc_payment_method"/>
+                            <field name="wc_coupon_codes"/>
+                            <field name="wc_last_synced"/>
+                        </group>
+                        <group string="Delivery">
+                            <field name="wc_shipping_method"/>
+                            <field name="wc_cvs_store_name"/>
+                            <field name="wc_cvs_store_id"/>
+                            <field name="wc_shipping_total"/>
+                            <field name="wc_discount_total"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_order_search_wc" model="ir.ui.view">
+        <field name="name">sale.order.search.wc</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <field name="wc_cvs_store_name"/>
+                <filter name="wc_orders" string="WooCommerce" domain="[('wc_order_id', '>', 0)]"/>
+                <filter name="wc_group_shipping" string="Shipping Method" context="{'group_by': 'wc_shipping_method'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

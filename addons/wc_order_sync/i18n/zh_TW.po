@@ -305,8 +305,8 @@ msgstr "歷史匯入"
 
 #. module: wc_order_sync
 #: model:ir.cron,name:wc_order_sync.ir_cron_wc_sync_queue
-msgid "WooCommerce: Daily Sync Queue"
-msgstr "WooCommerce: 每日同步佇列"
+msgid "WooCommerce: Sync Orders (every 15 min)"
+msgstr "WooCommerce：同步訂單（每 15 分鐘）"
 
 #. module: wc_order_sync
 #: code:addons/wc_order_sync/models/wc_config.py:0
@@ -319,3 +319,60 @@ msgstr "手動同步已完成"
 #, python-format
 msgid "Please fill in WooCommerce connection information in Settings first"
 msgstr "請先在設定中填寫 WooCommerce 連線資訊"
+
+#. module: wc_order_sync
+#: model:ir.cron,name:wc_order_sync.ir_cron_wc_watchdog
+msgid "WooCommerce: Sync Watchdog (hourly)"
+msgstr "WooCommerce：同步看門狗（每小時）"
+
+#. module: wc_order_sync
+#: model:ir.model.fields,field_description:wc_order_sync.field_product_wc_map__wc_sku
+msgid "WC SKU"
+msgstr "WC 貨號"
+
+#. module: wc_order_sync
+#: model:ir.model.fields,field_description:wc_order_sync.field_sale_order__wc_shipping_method
+msgid "WC Shipping Method"
+msgstr "WC 物流方式"
+
+#. module: wc_order_sync
+#: model:ir.model.fields,field_description:wc_order_sync.field_sale_order__wc_cvs_store_id
+msgid "CVS Store ID"
+msgstr "超商門市代號"
+
+#. module: wc_order_sync
+#: model:ir.model.fields,field_description:wc_order_sync.field_sale_order__wc_cvs_store_name
+msgid "CVS Store"
+msgstr "超商門市"
+
+#. module: wc_order_sync
+#: model_terms:ir.ui.view,arch_db:wc_order_sync.view_order_form_wc
+msgid "Order"
+msgstr "訂單"
+
+#. module: wc_order_sync
+#: model_terms:ir.ui.view,arch_db:wc_order_sync.view_order_form_wc
+msgid "Delivery"
+msgstr "配送"
+
+#. module: wc_order_sync
+#: model_terms:ir.ui.view,arch_db:wc_order_sync.view_order_search_wc
+msgid "Shipping Method"
+msgstr "物流方式"
+
+#. module: wc_order_sync
+#: model_terms:ir.ui.view,arch_db:wc_order_sync.res_config_settings_view_form_wc_sync
+msgid "Auto-deduct Stock (validate the delivery once WooCommerce reports the order shipped)"
+msgstr "自動扣庫存（網店回報已出貨時自動完成出貨單）"
+
+#. module: wc_order_sync
+#. odoo-python
+#: code:addons/wc_order_sync/models/wc_product_map.py:0
+msgid "Map this WooCommerce product"
+msgstr "請對應這個網店商品"
+
+#. module: wc_order_sync
+#. odoo-python
+#: code:addons/wc_order_sync/models/wc_product_map.py:0
+msgid "WC product %(name)s (SKU %(sku)s) matches no Odoo internal reference. Orders containing it are parked on the placeholder product until an Odoo product is set here."
+msgstr "網店商品 %(name)s（貨號 %(sku)s）對不上任何 Odoo 內部參考。含有這個商品的訂單會先記在「待確認網店商品」，請在此指定正確的 Odoo 商品。"
