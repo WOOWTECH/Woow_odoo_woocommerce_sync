@@ -4,6 +4,7 @@ import logging
 import requests
 
 from odoo import _, api, fields, models
+from odoo.exceptions import AccessError
 
 _logger = logging.getLogger(__name__)
 
@@ -57,6 +58,16 @@ class ResConfigSettings(models.TransientModel):
 
     def get_values(self):
         return self._wc_hide_restricted_settings(super().get_values())
+
+    def set_values(self):
+        # Core's set_values() writes every settings field through sudo(). Any logged-in user can
+        # call it over RPC on an empty recordset, which would first clear every config parameter
+        # (the store credentials included). Only execute() is meant to reach it, and execute()
+        # requires an administrator; enforce the same here instead of relying on another
+        # module happening to raise later in the chain.
+        if not (self.env.su or self.env.is_admin()):
+            raise AccessError(_("Only administrators can change the settings"))
+        return super().set_values()
 
     # ------------------------------------------------------------------
     # Buttons

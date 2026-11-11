@@ -108,6 +108,20 @@ class TestWcBaseConnectorSecurity(TransactionCase):
         self.assertEqual(ICP.get_param('wc_base_connector.wc_password'),
                          FAKE_PARAMS['wc_base_connector.wc_password'])
 
+    def test_settings_cannot_be_written_by_non_administrators(self):
+        # Core set_values() clears every config parameter through sudo() when called on an
+        # empty recordset; a non-administrator must be refused before anything is written.
+        IrConfig = type(self.env['ir.config_parameter'])
+        with patch.object(IrConfig, 'set_param', autospec=True, side_effect=IrConfig.set_param) as spy:
+            for user in self.not_system:
+                with self.subTest(user=user.login):
+                    with self.assertRaises(AccessError):
+                        self._settings(user).browse().set_values()
+            spy.assert_not_called()
+        ICP = self.env['ir.config_parameter'].sudo()
+        for key, value in FAKE_PARAMS.items():
+            self.assertEqual(ICP.get_param(key), value)
+
     # ------------------------------------------------------------------
     # Test Connection button
     # ------------------------------------------------------------------

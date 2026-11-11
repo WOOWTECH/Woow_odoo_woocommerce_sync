@@ -136,7 +136,8 @@ managers included, never receive them from the server.
 |---|---|
 | *Settings › WooCommerce › Test Connection* | Settings administrators |
 | *Settings › WooCommerce › Manual Sync* | Settings administrators |
-| *WooCommerce › Historical Import* | WooCommerce managers, Settings administrators |
+| *WooCommerce › Historical Import* | WooCommerce managers (the server also accepts Settings administrators, but only managers see the menu) |
+| Saving any settings (`res.config.settings.set_values`) | Administrators, as for Odoo's own *Save* button |
 | *Retry* on a queue row | WooCommerce managers |
 | Data repairs, `bulk_retype_service_to_storable`, `wc.sync.queue.action_manual_sync` | Odoo shell / server-side Python only (see *Data repairs*) |
 
@@ -280,6 +281,8 @@ odoo -d <test db> -i wc_base_connector,wc_order_sync --test-enable --stop-after-
 - The webhook fails closed without a secret, verifies the signature over the raw body and
   limits the body to 2 MiB.
 - `_` and `%` in buyer e-mails and promoter names are matched literally, not as wildcards.
+- `res.config.settings.set_values` refuses non-administrators before anything is written
+  (called over RPC on an empty recordset it would otherwise clear every config parameter).
 - Imported orders only get a TWD pricelist of their own company (or a shared one). Before,
   another company's TWD pricelist sorted first made every import fail.
 

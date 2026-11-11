@@ -88,6 +88,12 @@ msgstr ""
 
 #. module: wc_base_connector
 #. odoo-python
+#: code:addons/wc_base_connector/models/wc_config.py:0
+msgid "Only administrators can change the settings"
+msgstr ""
+
+#. module: wc_base_connector
+#. odoo-python
 #: code:addons/wc_base_connector/models/wc_connection.py:0
 msgid "Only Settings administrators can run this WooCommerce operation."
 msgstr ""

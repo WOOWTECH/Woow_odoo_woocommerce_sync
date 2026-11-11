@@ -104,7 +104,8 @@ English: [README.md](README.md)
 |---|---|
 | 「設定 › WooCommerce › 測試連線」 | 系統設定管理員 |
 | 「設定 › WooCommerce › 手動同步」 | 系統設定管理員 |
-| 「WooCommerce › 歷史匯入」 | WooCommerce 管理員、系統設定管理員 |
+| 「WooCommerce › 歷史匯入」 | WooCommerce 管理員（伺服器端也接受系統設定管理員，但只有 WooCommerce 管理員看得到選單） |
+| 儲存任何設定（`res.config.settings.set_values`） | 管理員，與 Odoo 本身的「儲存」按鈕相同 |
 | 佇列的「重試」 | WooCommerce 管理員 |
 | 資料修復方法、`bulk_retype_service_to_storable`、`wc.sync.queue.action_manual_sync` | 只能在 Odoo shell／伺服器端 Python 執行（見「資料修復」） |
 
@@ -213,6 +214,7 @@ odoo -d <測試資料庫> -i wc_base_connector,wc_order_sync --test-enable --sto
 - 歷史匯入需要 WooCommerce 管理員或系統設定管理員；測試連線與手動同步需要系統設定管理員，在伺服器端檢查。測試連線不再回傳例外訊息。
 - webhook 沒有密鑰時一律拒收、簽章改對原始內容驗證、內容上限 2 MiB。
 - 客人 email 與推廣者名稱中的 `_`、`%` 視為一般字元比對，不再當萬用字元。
+- `res.config.settings.set_values` 在寫入任何東西之前就拒絕非管理員（否則以空的記錄經 RPC 呼叫，會先清掉所有設定參數）。
 - 匯入的訂單只用自己公司（或共用）的台幣價目表。之前只要別家公司有排序較前的台幣價目表，每張單都會匯入失敗。
 
 ### wc_order_sync 18.0.3.0.0
