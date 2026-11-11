@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import requests
 
 from odoo import Command
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
 
 FAKE_PARAMS = {
@@ -111,11 +111,14 @@ class TestWcBaseConnectorSecurity(TransactionCase):
     def test_settings_cannot_be_written_by_non_administrators(self):
         # Core set_values() clears every config parameter through sudo() when called on an
         # empty recordset; a non-administrator must be refused before anything is written.
+        # The refusal is this module's AccessError, or a UserError from another module's own
+        # check that runs earlier in the set_values() chain (stock refuses on a database with
+        # several warehouses); AccessError is a UserError, and either way nothing is written.
         IrConfig = type(self.env['ir.config_parameter'])
         with patch.object(IrConfig, 'set_param', autospec=True, side_effect=IrConfig.set_param) as spy:
             for user in self.not_system:
                 with self.subTest(user=user.login):
-                    with self.assertRaises(AccessError):
+                    with self.assertRaises(UserError):
                         self._settings(user).browse().set_values()
             spy.assert_not_called()
         ICP = self.env['ir.config_parameter'].sudo()
