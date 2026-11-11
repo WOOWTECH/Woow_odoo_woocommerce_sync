@@ -59,12 +59,15 @@ class ResConfigSettings(models.TransientModel):
     def get_values(self):
         return self._wc_hide_restricted_settings(super().get_values())
 
+    @api.private
     def set_values(self):
-        # Core's set_values() writes every settings field through sudo(). Any logged-in user can
-        # call it over RPC on an empty recordset, which would first clear every config parameter
-        # (the store credentials included). Only execute() is meant to reach it, and execute()
-        # requires an administrator; enforce the same here instead of relying on another
-        # module happening to raise later in the chain.
+        # Core's set_values() writes every settings field through sudo(), and other modules'
+        # overrides earlier in the chain write too, so an RPC call on an empty recordset by any
+        # logged-in user would clear every config parameter (the store credentials included)
+        # unless some module happens to raise. Only execute() is meant to reach it (Odoo's Save
+        # button calls execute(), never set_values()). @api.private makes the RPC layer refuse
+        # set_values() for the whole inheritance chain before any override runs; the check
+        # below covers Python callers, with the same rule as execute().
         if not (self.env.su or self.env.is_admin()):
             raise AccessError(_("Only administrators can change the settings"))
         return super().set_values()

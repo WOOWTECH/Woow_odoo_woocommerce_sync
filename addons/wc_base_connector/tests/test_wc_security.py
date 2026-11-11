@@ -108,6 +108,14 @@ class TestWcBaseConnectorSecurity(TransactionCase):
         self.assertEqual(ICP.get_param('wc_base_connector.wc_password'),
                          FAKE_PARAMS['wc_base_connector.wc_password'])
 
+    def test_set_values_cannot_be_called_over_rpc(self):
+        # Odoo's Save button calls execute(); set_values() itself must not be reachable over RPC,
+        # where any logged-in user could call it on an empty recordset.
+        from odoo.service.model import get_public_method
+        with self.assertRaises(AccessError):
+            get_public_method(self.env['res.config.settings'], 'set_values')
+        self.assertTrue(get_public_method(self.env['res.config.settings'], 'execute'))
+
     def test_settings_cannot_be_written_by_non_administrators(self):
         # Core set_values() clears every config parameter through sudo() when called on an
         # empty recordset; a non-administrator must be refused before anything is written.
