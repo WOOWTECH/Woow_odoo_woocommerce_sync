@@ -376,3 +376,8 @@ msgstr "請對應這個網店商品"
 #: code:addons/wc_order_sync/models/wc_product_map.py:0
 msgid "WC product %(name)s (SKU %(sku)s) matches no Odoo internal reference. Orders containing it are parked on the placeholder product until an Odoo product is set here."
 msgstr "網店商品 %(name)s（貨號 %(sku)s）對不上任何 Odoo 內部參考。含有這個商品的訂單會先記在「待確認網店商品」，請在此指定正確的 Odoo 商品。"
+
+#. module: wc_order_sync
+#: model:ir.model.fields,help:wc_order_sync.field_res_config_settings__wc_webhook_secret
+msgid "Required: webhook deliveries are rejected while it is empty."
+msgstr "必填：未設定時，所有 webhook 送達都會被拒收。"

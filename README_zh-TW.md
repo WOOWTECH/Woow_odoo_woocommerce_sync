@@ -35,7 +35,7 @@ English: [README.md](README.md)
 ```
 
 - **定時抓單**：向網店要「上次成功抓單之後**修改過**」的訂單（往前多抓 10 分鐘重疊）。用「修改時間」而不是「建立時間」，才抓得到先建立、晚一點才付款的單（ATM 轉帳、超商代碼）。已經在佇列或已匯入的單會自動略過，重疊不會重複建單。
-- **webhook**（`POST /wc_sync/webhook`）：訂單一建立或一付款就進佇列，會驗證 `X-WC-Webhook-Signature` 簽章。
+- **webhook**（`POST /wc_sync/webhook`）：訂單一建立或一付款就進佇列，會用 webhook 密鑰驗證 `X-WC-Webhook-Signature` 簽章（對原始請求內容計算 HMAC-SHA256）。**一定要設定 webhook 密鑰**：密鑰空白時所有送達一律拒收（HTTP 503）、不會進佇列；簽章錯誤或沒有簽章回 HTTP 401；內容超過 2 MiB 回 HTTP 413。
 - **回頭同步**：追蹤已匯入訂單的狀態。網店取消／退款／失敗 → 取消 Odoo 訂單；網店已出貨 → 在開啟自動扣庫存時完成出貨單。
 - 佇列保留每張單的原始資料，歷史資料隨時可以重新推導（見「資料修復」）。
 
@@ -80,7 +80,7 @@ English: [README.md](README.md)
 | 設定 | 說明 |
 |---|---|
 | 網址、API 帳號、API 密碼 | 網店與 WordPress 應用程式密碼，給 REST API 用。 |
-| Webhook 密鑰 | 網店中指向 `/wc_sync/webhook` 的 webhook 所用的密鑰。 |
+| Webhook 密鑰 | 網店中指向 `/wc_sync/webhook` 的 webhook 所用的密鑰。**必填**，空白時 webhook 一律拒收。 |
 | 自動確認訂單 | 匯入後自動確認（會產生出貨單）。 |
 | 自動扣庫存 | 網店回報已出貨時自動完成出貨單。**期初盤點完成前請保持關閉**（見下方）。 |
 
@@ -94,6 +94,20 @@ English: [README.md](README.md)
 | `wc_order_sync.watchdog_fetch_hours` | `2` | 超過幾小時沒成功抓單就警示。 |
 | `wc_order_sync.watchdog_order_hours` | `24` | 超過幾小時沒有新訂單就警示。 |
 | `wc_order_sync.health_token` | 自動產生 | 健康檢查網址的權杖。 |
+
+### 誰可以做什麼
+
+網址、API 帳號、API 密碼與 webhook 密鑰，只有**系統設定管理員**（「管理／設定」權限）看得到、改得到；其他使用者（包括 WooCommerce 管理員）從伺服器拿不到這些值。
+
+| 動作 | 可執行者 |
+|---|---|
+| 「設定 › WooCommerce › 測試連線」 | 系統設定管理員 |
+| 「設定 › WooCommerce › 手動同步」 | 系統設定管理員 |
+| 「WooCommerce › 歷史匯入」 | WooCommerce 管理員、系統設定管理員 |
+| 佇列的「重試」 | WooCommerce 管理員 |
+| 資料修復方法、`bulk_retype_service_to_storable`、`wc.sync.queue.action_manual_sync` | 只能在 Odoo shell／伺服器端 Python 執行（見「資料修復」） |
+
+以上每一項都在伺服器端檢查呼叫者，不只靠選單與畫面，所以其他使用者自己組 RPC 呼叫也會被拒絕（存取錯誤）。測試連線失敗時只顯示固定訊息，詳細原因寫在伺服器日誌。
 
 視為「已出貨」的網店狀態（會完成出貨單）：`completed`、`wmp-shipped`、`wmp-in-transit`、`ry-at-cvs`、`ry-out-cvs`。視為「取消」的：`cancelled`、`refunded`、`failed`。
 
@@ -130,6 +144,8 @@ English: [README.md](README.md)
 
 `models/wc_maintenance.py` 用佇列保留的原始資料，以跟線上同步相同的規則，重新推導 18.0.3 之前匯入的資料。每個方法預設 `dry_run=True`（只回報、不寫入）；在 Odoo shell 執行，正式執行後要 `env.cr.commit()`。
 
+這些方法（以及 `bulk_retype_service_to_storable`、`wc.sync.queue.action_manual_sync`）**只能在 Odoo shell 執行**：不能經 RPC（`/web/dataset/call_kw`、XML-RPC、JSON-RPC）呼叫；在 Python 裡呼叫時，呼叫者必須是超級使用者模式（Odoo shell 的 `env`）、系統設定管理員或 WooCommerce 管理員，否則會拒絕。
+
 | 方法 | 修復內容 |
 |---|---|
 | `wc_create_bundle_products` | 建立缺少的組合商品。要在修商品對應之前執行。 |
@@ -149,6 +165,8 @@ English: [README.md](README.md)
 | 警示「超過 N 小時沒有成功從網店抓單」 | 伺服器日誌 `WC Sync: fetch failed with HTTP …`；檢查網址與應用程式密碼（設定 › WooCommerce › 測試連線）。 |
 | 訂單行掛在「待確認網店商品」 | 「WooCommerce › 商品對應表」標色的列，指定 Odoo 商品。 |
 | 日誌出現 `WC Webhook: Invalid signature` | 網店有一組 webhook 的密鑰不同，日誌會寫出它的編號。 |
+| 日誌出現 `WC Webhook: Rejected, no webhook secret is configured` | 到「設定 › WooCommerce › Webhook 密鑰」填入網店 webhook 的密鑰。 |
+| 執行資料修復時出現存取錯誤 | 請在 Odoo shell 執行；網頁介面與 RPC 都不能呼叫。 |
 | 訂單在「一般消費者」名下 | 那張網店訂單沒有 email 也沒有電話。 |
 | 佇列有「錯誤」 | 打開看錯誤訊息，處理後按「重試」。 |
 
@@ -178,7 +196,22 @@ done
 
 升級到 18.0.3.0.0：更新模組（`-u wc_order_sync`），再執行上面的資料修復（先空跑）。期初盤點前請保持「自動扣庫存」關閉。
 
+## 測試
+
+```sh
+odoo -d <測試資料庫> -i wc_base_connector,wc_order_sync --test-enable --stop-after-init \
+     --test-tags wc_security
+```
+
 ## 版本紀錄
+
+### wc_base_connector 18.0.1.0.1／wc_order_sync 18.0.3.0.1（資安修正）
+
+- 網店帳密與 webhook 密鑰不再回傳給系統設定管理員以外的使用者（`res.config.settings.default_get`／`get_values`，欄位限「設定」權限）。
+- 資料修復方法、`bulk_retype_service_to_storable`、`wc.sync.queue.action_manual_sync` 不能經 RPC 呼叫，並會檢查呼叫者。
+- 歷史匯入需要 WooCommerce 管理員或系統設定管理員；測試連線與手動同步需要系統設定管理員，在伺服器端檢查。測試連線不再回傳例外訊息。
+- webhook 沒有密鑰時一律拒收、簽章改對原始內容驗證、內容上限 2 MiB。
+- 客人 email 與推廣者名稱中的 `_`、`%` 視為一般字元比對，不再當萬用字元。
 
 ### wc_order_sync 18.0.3.0.0
 

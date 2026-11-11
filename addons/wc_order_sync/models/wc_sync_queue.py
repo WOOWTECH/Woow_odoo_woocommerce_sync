@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import requests
 from odoo import api, fields, models
+from odoo.tools import escape_psql
 
 _logger = logging.getLogger(__name__)
 
@@ -30,6 +31,15 @@ CHANNEL_TAG_RE = re.compile(r'[（(]([^（()）]{1,14})[)）]\s*$')
 
 def _normalize_email(value):
     return (value or '').strip().lower()
+
+
+def _like_exact(value):
+    """``value`` for an ``=like`` / ``=ilike`` domain that matches it literally.
+
+    Without escaping, a ``_`` or ``%`` in a WooCommerce e-mail or name is a SQL
+    wildcard, and the order lands on whichever other record the pattern hits.
+    """
+    return escape_psql(value or '')
 
 
 def _normalize_phone(value):
@@ -107,8 +117,12 @@ class WcSyncQueue(models.Model):
     def action_retry(self):
         self.write({'state': 'pending', 'error_message': False, 'attempts': 0})
 
+    @api.private
     @api.model
     def action_manual_sync(self):
+        """Fetch and process now. Odoo shell / Python only; the Settings button
+        calls res.config.settings.action_manual_sync."""
+        self.env['wc.connection.mixin']._wc_check_access()
         fetched = self._fetch_new_wc_orders()
         self._cron_process_queue()
         return {
@@ -414,7 +428,7 @@ class WcSyncQueue(models.Model):
         to undo than splitting one person in two."""
         Partner = self.env['res.partner'].sudo()
         if email:
-            partner = Partner.search([('email', '=ilike', email), ('type', '=', 'contact')], limit=1)
+            partner = Partner.search([('email', '=ilike', _like_exact(email)), ('type', '=', 'contact')], limit=1)
             if partner:
                 return partner
         if phone:
@@ -450,7 +464,8 @@ class WcSyncQueue(models.Model):
         if wc_customer_id:
             mapping = PartnerMap.search([('wc_customer_id', '=', wc_customer_id)], limit=1)
         if not mapping and email:
-            mapping = PartnerMap.search([('wc_customer_id', '=', 0), ('wc_email', '=ilike', email)], limit=1)
+            mapping = PartnerMap.search([('wc_customer_id', '=', 0), ('wc_email', '=ilike', _like_exact(email))],
+                                        limit=1)
         if not mapping and phone and not email:
             mapping = PartnerMap.search([('wc_customer_id', '=', 0), ('wc_email', 'in', ('', False)),
                                          ('wc_phone', '=', phone)], limit=1)
@@ -573,7 +588,7 @@ class WcSyncQueue(models.Model):
         if not name:
             return self.env[model]
         # Case-insensitive, so "Cherry" and "cherry" are one promoter.
-        record = self.env[model].sudo().search([('name', '=ilike', name)], limit=1)
+        record = self.env[model].sudo().search([('name', '=ilike', _like_exact(name))], limit=1)
         return record or self.env[model].sudo().create({'name': name})
 
     @api.model
@@ -737,6 +752,7 @@ class WcSyncQueue(models.Model):
             'list_price': 0.0, 'invoice_policy': 'order',
         })
 
+    @api.private
     @api.model
     def bulk_retype_service_to_storable(self, product_ids=None, dry_run=True):
         """Retype auto-matched service products (with no stock history) to storable goods.
@@ -744,8 +760,9 @@ class WcSyncQueue(models.Model):
         Call from Odoo shell with a scoped list, e.g.:
             env['wc.sync.queue'].bulk_retype_service_to_storable([497, 501], dry_run=False)
 
-        With dry_run=True, only reports what would change.
+        With dry_run=True, only reports what would change. Not callable over RPC.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         Product = self.env['product.product'].sudo()
         domain = [('type', '=', 'service')]
         if product_ids:

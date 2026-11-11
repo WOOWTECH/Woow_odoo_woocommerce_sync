@@ -40,7 +40,10 @@ WooCommerce ──(status changes)── back-sync ──► cancel the order / 
   catches an order created while awaiting payment (ATM transfer, CVS payment code) and
   paid later. Orders already queued or imported are skipped, so the overlap is harmless.
 - **The webhook** (`POST /wc_sync/webhook`) queues an order the moment it is created or
-  paid. It verifies `X-WC-Webhook-Signature` against the webhook secret.
+  paid. It verifies `X-WC-Webhook-Signature` (HMAC-SHA256 of the exact request body)
+  against the webhook secret. **A webhook secret is required**: while it is empty every
+  delivery is rejected (HTTP 503) and nothing is queued; a wrong or missing signature is
+  rejected with HTTP 401; bodies over 2 MiB are rejected (HTTP 413).
 - **Back-sync** follows status changes of imported orders: cancelled / refunded / failed
   cancels the Odoo order; a shipped status validates its delivery when automatic stock
   deduction is on.
@@ -105,7 +108,7 @@ and numbers in the same position are ignored.
 | Setting | Meaning |
 |---|---|
 | WooCommerce URL, API Username, API Password | Store and WordPress application password used by the REST API. |
-| Webhook Secret | Secret of the WooCommerce webhook pointing at `/wc_sync/webhook`. |
+| Webhook Secret | Secret of the WooCommerce webhook pointing at `/wc_sync/webhook`. **Required**; the webhook rejects every delivery while it is empty. |
 | Auto-confirm Orders | Confirm imported orders (creates their deliveries). |
 | Auto-deduct Stock | Validate the delivery once WooCommerce reports the order shipped. **Keep off until the opening inventory count** (see below). |
 
@@ -119,6 +122,24 @@ System parameters (*Settings › Technical › System Parameters*):
 | `wc_order_sync.watchdog_fetch_hours` | `2` | Alert when no successful fetch for this long. |
 | `wc_order_sync.watchdog_order_hours` | `24` | Alert when no new order for this long. |
 | `wc_order_sync.health_token` | generated | Token for the health endpoint. |
+
+### Who can do what
+
+The store URL, API username, API password and webhook secret are readable and editable
+by **Settings administrators** (*Administration / Settings*) only; other users, WooCommerce
+managers included, never receive them from the server.
+
+| Action | Allowed for |
+|---|---|
+| *Settings › WooCommerce › Test Connection* | Settings administrators |
+| *Settings › WooCommerce › Manual Sync* | Settings administrators |
+| *WooCommerce › Historical Import* | WooCommerce managers, Settings administrators |
+| *Retry* on a queue row | WooCommerce managers |
+| Data repairs, `bulk_retype_service_to_storable`, `wc.sync.queue.action_manual_sync` | Odoo shell / server-side Python only (see *Data repairs*) |
+
+Each of these checks its caller on the server, not only through menus and views, so a
+crafted RPC call by another user is refused with an access error. Failed connection tests
+show a fixed message; the details go to the server log.
 
 Shipped statuses (validate the delivery): `completed`, `wmp-shipped`, `wmp-in-transit`,
 `ry-at-cvs`, `ry-out-cvs`. Cancelling statuses: `cancelled`, `refunded`, `failed`.
@@ -174,6 +195,11 @@ and barcode (`CM002`); bundles duplicated from a single item have no usable SKU 
 JSON, with the same rules as the live sync. Every method defaults to `dry_run=True` and
 returns a report; run it in an Odoo shell and `env.cr.commit()` after a real run.
 
+These methods (and `bulk_retype_service_to_storable` and `wc.sync.queue.action_manual_sync`)
+are **shell-only**: they cannot be called over RPC (`/web/dataset/call_kw`, XML-RPC,
+JSON-RPC), and from Python they refuse any caller that is not in superuser mode (the Odoo
+shell's `env`), a Settings administrator or a WooCommerce manager.
+
 | Method | Repairs |
 |---|---|
 | `wc_create_bundle_products` | Creates the missing bundle products. Run before the product mappings. |
@@ -194,6 +220,8 @@ so only the customer and addresses change.
 | Alert *超過 N 小時沒有成功從網店抓單* | Server log `WC Sync: fetch failed with HTTP …`; check the store URL and application password (*Settings › WooCommerce › Test Connection*). |
 | Order lines on **待確認網店商品** | *WooCommerce › Product Mapping*, rows highlighted; set the Odoo product. |
 | Log `WC Webhook: Invalid signature` | A webhook in WooCommerce has a different secret; the log names its id. |
+| Log `WC Webhook: Rejected, no webhook secret is configured` | Set *Settings › WooCommerce › Webhook Secret* to the secret of the WooCommerce webhook. |
+| *Access error* when running a data repair | Run it in an Odoo shell; it is not callable from the web client or RPC. |
 | Order on **一般消費者** | The WC order carried neither e-mail nor phone. |
 | Queue row in *Error* | Open it for the message; *Retry* after fixing. |
 
@@ -227,7 +255,28 @@ done
 Upgrading to 18.0.3.0.0: update the module (`-u wc_order_sync`), then run the data repairs
 above (dry run first). Keep *Auto-deduct Stock* off until the opening inventory count.
 
+## Tests
+
+```sh
+odoo -d <test db> -i wc_base_connector,wc_order_sync --test-enable --stop-after-init \
+     --test-tags wc_security
+```
+
 ## Changelog
+
+### wc_base_connector 18.0.1.0.1 / wc_order_sync 18.0.3.0.1 (security)
+
+- Store credentials and the webhook secret are no longer returned to users who are not
+  Settings administrators (`res.config.settings.default_get` / `get_values`, fields
+  restricted to *Settings*).
+- Data repairs, `bulk_retype_service_to_storable` and `wc.sync.queue.action_manual_sync`
+  are not callable over RPC and check their caller.
+- Historical import requires a WooCommerce manager or Settings administrator; Test
+  Connection and Manual Sync require a Settings administrator, checked on the server.
+  Test Connection no longer returns exception text.
+- The webhook fails closed without a secret, verifies the signature over the raw body and
+  limits the body to 2 MiB.
+- `_` and `%` in buyer e-mails and promoter names are matched literally, not as wildcards.
 
 ### wc_order_sync 18.0.3.0.0
 

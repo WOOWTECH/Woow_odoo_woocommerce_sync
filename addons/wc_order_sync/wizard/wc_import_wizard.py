@@ -30,6 +30,10 @@ class WcImportWizard(models.TransientModel):
     ], default='draft')
 
     def action_import(self):
+        # The import runs through sudo(); check the caller first, since an RPC call on an
+        # empty recordset never reaches this model's manager-only access rules.
+        self.env['wc.connection.mixin']._wc_check_access()
+        self.ensure_one()
         mixin = self.env['wc.connection.mixin'].sudo()
         wc_url, auth = mixin._get_wc_auth()
         if not wc_url or not auth[0]:

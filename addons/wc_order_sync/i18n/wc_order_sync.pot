@@ -319,3 +319,8 @@ msgstr ""
 #, python-format
 msgid "Please fill in WooCommerce connection information in Settings first"
 msgstr ""
+
+#. module: wc_order_sync
+#: model:ir.model.fields,help:wc_order_sync.field_res_config_settings__wc_webhook_secret
+msgid "Required: webhook deliveries are rejected while it is empty."
+msgstr ""

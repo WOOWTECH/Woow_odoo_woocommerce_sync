@@ -75,7 +75,19 @@ msgid "Connection failed: HTTP %s"
 msgstr "連線失敗：HTTP %s"
 
 #. module: wc_base_connector
+#. odoo-python
 #: code:addons/wc_base_connector/models/wc_config.py:0
-#, python-format
-msgid "Connection error: %s"
-msgstr "連線錯誤：%s"
+msgid "Connection error. See the server log for details."
+msgstr "連線錯誤，詳細原因請見伺服器日誌。"
+
+#. module: wc_base_connector
+#. odoo-python
+#: code:addons/wc_base_connector/models/wc_connection.py:0
+msgid "Only WooCommerce managers and Settings administrators can run this WooCommerce operation."
+msgstr "只有 WooCommerce 管理員與系統設定管理員可以執行這項 WooCommerce 操作。"
+
+#. module: wc_base_connector
+#. odoo-python
+#: code:addons/wc_base_connector/models/wc_connection.py:0
+msgid "Only Settings administrators can run this WooCommerce operation."
+msgstr "只有系統設定管理員可以執行這項 WooCommerce 操作。"

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models
+from odoo import _, api, fields, models
 
 
 class ResConfigSettings(models.TransientModel):
@@ -8,6 +8,8 @@ class ResConfigSettings(models.TransientModel):
     wc_webhook_secret = fields.Char(
         string="Webhook Secret",
         config_parameter='wc_order_sync.wc_webhook_secret',
+        groups='base.group_system',
+        help="Required: webhook deliveries are rejected while it is empty.",
     )
     wc_auto_confirm = fields.Boolean(
         string="Auto-confirm Orders",
@@ -27,14 +29,19 @@ class ResConfigSettings(models.TransientModel):
         help="Fallback product when WC product cannot be matched",
     )
 
+    @api.model
+    def _wc_restricted_settings(self):
+        return super()._wc_restricted_settings() + ['wc_webhook_secret']
+
     def action_manual_sync(self):
+        self.env['wc.connection.mixin']._wc_check_access(allow_wc_manager=False)
         self.env['wc.sync.queue'].sudo()._cron_process_queue()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': 'WooCommerce',
-                'message': 'Manual sync completed',
+                'message': _("Manual sync completed"),
                 'type': 'success',
                 'sticky': False,
             }

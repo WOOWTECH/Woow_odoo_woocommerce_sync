@@ -7,6 +7,10 @@ sync now applies to new orders, which keeps history and future consistent.
 Run from an Odoo shell, e.g.:
 
     env['wc.sync.queue'].wc_repair_customers(dry_run=True)
+
+They are not callable over RPC (@api.private) and, as a second line of
+defence, refuse any caller that is not in superuser mode, a Settings
+administrator or a WooCommerce manager: everything inside runs through sudo().
 """
 import json
 import logging
@@ -15,7 +19,7 @@ from collections import Counter, defaultdict
 
 from odoo import api, models
 
-from .wc_sync_queue import (BUNDLE_RE, _bundle_name, _is_bundle_name, _meta,
+from .wc_sync_queue import (BUNDLE_RE, _bundle_name, _is_bundle_name, _like_exact, _meta,
                             _normalize_email, _normalize_phone)
 
 _logger = logging.getLogger(__name__)
@@ -66,6 +70,7 @@ class WcSyncQueue(models.Model):
     # 1. customers merged by name
     # ------------------------------------------------------------------
 
+    @api.private
     @api.model
     def wc_repair_customers(self, dry_run=True):
         """Give every buyer identity its own customer and move its orders there.
@@ -77,6 +82,7 @@ class WcSyncQueue(models.Model):
         new one. Orders without any e-mail or phone go to 一般消費者.
         Only orders without invoices are moved.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         generic = self._generic_consumer()
 
         by_partner = defaultdict(lambda: defaultdict(list))   # partner -> identity -> [(item, data)]
@@ -188,7 +194,7 @@ class WcSyncQueue(models.Model):
             if kind == 'cid':
                 domain = [('wc_customer_id', '=', int(value))]
             elif kind == 'em':
-                domain = [('wc_customer_id', '=', 0), ('wc_email', '=ilike', value)]
+                domain = [('wc_customer_id', '=', 0), ('wc_email', '=ilike', _like_exact(value))]
             else:
                 domain = [('wc_customer_id', '=', 0), ('wc_email', 'in', ('', False)), ('wc_phone', '=', value)]
             mapping = PartnerMap.search(domain, limit=1)
@@ -230,11 +236,13 @@ class WcSyncQueue(models.Model):
     # 2. delivery addresses
     # ------------------------------------------------------------------
 
+    @api.private
     @api.model
     def wc_repair_shipping(self, dry_run=True):
         """Record the shipping method / CVS store on every WC order, and give orders
         whose delivery is still open their real delivery address (CVS store or
         the separate recipient address), so the picking goes to the right place."""
+        self.env['wc.connection.mixin']._wc_check_access()
         report = Counter()
         samples = []
         for item, data in self._wc_imported_items():
@@ -267,9 +275,11 @@ class WcSyncQueue(models.Model):
     # 3. channel
     # ------------------------------------------------------------------
 
+    @api.private
     @api.model
     def wc_repair_channels(self, dry_run=True):
         """Set promoter (utm source) and traffic source (utm medium) on every WC order."""
+        self.env['wc.connection.mixin']._wc_check_access()
         report = Counter()
         revenue = Counter()
         for item, data in self._wc_imported_items():
@@ -315,6 +325,7 @@ class WcSyncQueue(models.Model):
             base = re.sub(r'-\d+$', '', base).rstrip('-')
         return base
 
+    @api.private
     @api.model
     def wc_create_bundle_products(self, dry_run=True):
         """Create an Odoo product for every WC bundle that has none.
@@ -327,6 +338,7 @@ class WcSyncQueue(models.Model):
         stocked themselves; their stock moves through their components once a
         kit bill of materials exists.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         Product = self.env['product.product'].sudo()
         bundles = {}
         for entry in self._wc_sku_history().values():
@@ -363,6 +375,7 @@ class WcSyncQueue(models.Model):
                     'name': code, 'barcode_type': 'qr', 'product_id': product.id, 'sequence': 10})
         return {'dry_run': dry_run, 'bundles': created}
 
+    @api.private
     @api.model
     def wc_repair_product_maps(self, dry_run=True):
         """Re-derive every WC product mapping from its SKU instead of its name.
@@ -372,6 +385,7 @@ class WcSyncQueue(models.Model):
         mapped to a single item - the old name-substring guess - in which case it
         is cleared and sent for review, so its orders stop deducting the wrong item.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         ProductMap = self.env['product.wc.map'].sudo()
         history = self._wc_sku_history()
         report = Counter()
@@ -412,6 +426,7 @@ class WcSyncQueue(models.Model):
     # 5. stock go-live (run on the day of the opening inventory count)
     # ------------------------------------------------------------------
 
+    @api.private
     @api.model
     def wc_close_deliveries_before_count(self, cutoff, dry_run=True):
         """Cancel open WC deliveries of orders the shop already shipped before the count.
@@ -421,6 +436,7 @@ class WcSyncQueue(models.Model):
         still-open deliveries afterwards would deduct them a second time. Orders
         WooCommerce still reports as processing keep their delivery open.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         from .wc_sync_queue import WC_STATUSES_CANCEL_ODOO, WC_STATUSES_SHIPPED
         pickings = self.env['stock.picking'].sudo().search([
             ('sale_id.wc_order_id', '>', 0),
@@ -465,6 +481,7 @@ class WcSyncQueue(models.Model):
                 tokens.append((token, qty))
         return (family, tokens) if len(tokens) >= 2 else (None, [])
 
+    @api.private
     @api.model
     def wc_create_bundle_boms(self, dry_run=True):
         """Create a kit bill of materials for every bundle whose contents resolve.
@@ -473,6 +490,7 @@ class WcSyncQueue(models.Model):
         right family carries its name ("迷你香 – 除障香"), so nothing is guessed.
         Bundles that do not resolve are listed for the shop to define by hand.
         """
+        self.env['wc.connection.mixin']._wc_check_access()
         if 'mrp.bom' not in self.env:
             return {'error': 'mrp is not installed'}
         Product = self.env['product.product'].sudo()
