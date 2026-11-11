@@ -344,6 +344,19 @@ class WcSyncQueue(models.Model):
         value = self.env['ir.config_parameter'].sudo().get_param('wc_order_sync.wc_auto_stock', 'False')
         return value in ('True', '1', 'true')
 
+    @api.model
+    def _wc_order_pricelist(self):
+        """TWD pricelist for an imported order, limited to ones the order's company may use.
+
+        The order is created in the current company; a TWD pricelist that belongs to another
+        company makes Odoo refuse the order ("incompatible companies"), so a company-blind
+        search breaks every import as soon as another company has a TWD pricelist sorted first.
+        """
+        return self.env['product.pricelist'].sudo().search([
+            ('currency_id.name', '=', 'TWD'),
+            ('company_id', 'in', [self.env.company.id, False]),
+        ], limit=1)
+
     def _process_wc_order(self, data, queue_item):
         wc_order_id = data.get('id')
         existing = self.env['sale.order'].sudo().search([('wc_order_id', '=', wc_order_id)], limit=1)
@@ -373,7 +386,7 @@ class WcSyncQueue(models.Model):
         }
         order_vals.update(self._wc_shipping_vals(data))
         order_vals.update(self._wc_utm_vals(data))
-        pricelist = self.env['product.pricelist'].sudo().search([('currency_id.name', '=', 'TWD')], limit=1)
+        pricelist = self._wc_order_pricelist()
         if pricelist:
             order_vals['pricelist_id'] = pricelist.id
         sale_order = self.env['sale.order'].sudo().create(order_vals)

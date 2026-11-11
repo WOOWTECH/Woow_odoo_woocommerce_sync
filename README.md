@@ -47,6 +47,9 @@ WooCommerce ──(status changes)── back-sync ──► cancel the order / 
 - **Back-sync** follows status changes of imported orders: cancelled / refunded / failed
   cancels the Odoo order; a shipped status validates its delivery when automatic stock
   deduction is on.
+- **Pricelist**: an imported order gets the first TWD pricelist its own company may use
+  (that company's or a shared one). A pricelist of another company is never picked; Odoo
+  would refuse such an order as "incompatible companies".
 - The queue keeps each order's raw JSON, so history can be re-derived at any time
   (see *Data repairs*).
 
@@ -277,6 +280,8 @@ odoo -d <test db> -i wc_base_connector,wc_order_sync --test-enable --stop-after-
 - The webhook fails closed without a secret, verifies the signature over the raw body and
   limits the body to 2 MiB.
 - `_` and `%` in buyer e-mails and promoter names are matched literally, not as wildcards.
+- Imported orders only get a TWD pricelist of their own company (or a shared one). Before,
+  another company's TWD pricelist sorted first made every import fail.
 
 ### wc_order_sync 18.0.3.0.0
 
