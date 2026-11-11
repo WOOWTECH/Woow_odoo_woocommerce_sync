@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 
+import psycopg2.errors
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from odoo import http
@@ -25,7 +26,7 @@ def _webhook_signature(secret, raw_body):
 class WcWebhookController(http.Controller):
 
     @http.route('/wc_sync/webhook', type='http', auth='none',
-                methods=['POST'], csrf=False, save_session=False,
+                methods=['POST'], csrf=False, save_session=False, readonly=False,
                 max_content_length=WEBHOOK_MAX_CONTENT_LENGTH)
     def receive_webhook(self, **_kwargs):
         """Receive WooCommerce webhook and queue for processing.
@@ -36,6 +37,9 @@ class WcWebhookController(http.Controller):
         Fails closed: without a configured webhook secret every delivery is
         rejected, and a delivery is only queued when its signature matches the
         HMAC of the exact request body bytes.
+
+        readonly=False: Odoo 18 makes auth='none' routes read-only by default,
+        and this route writes the queue row.
         """
         def _resp(payload, status=200):
             return request.make_response(
@@ -127,6 +131,9 @@ class WcWebhookController(http.Controller):
                          wc_order_id, queue_item.id)
             return _resp({'status': 'queued', 'queue_id': queue_item.id})
 
+        except psycopg2.errors.ReadOnlySqlTransaction:
+            # Let Odoo retry the request on a read/write cursor.
+            raise
         except Exception:
             _logger.exception("WC Webhook: Error processing webhook")
             return _resp({'status': 'error', 'message': 'internal error'}, 500)

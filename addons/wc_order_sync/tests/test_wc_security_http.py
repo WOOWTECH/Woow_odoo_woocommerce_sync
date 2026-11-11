@@ -20,6 +20,11 @@ ACCESS_ERROR = 'odoo.exceptions.AccessError'
 
 @tagged('post_install', '-at_install', 'wc_security')
 class TestWcSecurityHttp(HttpCase):
+    # Odoo 18 runs auth='none' routes on a read-only cursor first and retries on
+    # a read/write one; the HttpCase test cursor cannot do that retry. Without
+    # this, any webhook INSERT fails with a 500, so the "nothing was queued"
+    # assertions would hold even on a tree that accepts unsigned orders.
+    readonly_enabled = False
 
     @classmethod
     def setUpClass(cls):
