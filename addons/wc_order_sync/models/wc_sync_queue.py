@@ -5,7 +5,7 @@ import re
 from datetime import timedelta
 
 import requests
-from odoo import api, fields, models
+from odoo import Command, api, fields, models
 from odoo.tools import escape_psql
 
 _logger = logging.getLogger(__name__)
@@ -356,6 +356,19 @@ class WcSyncQueue(models.Model):
             ('currency_id.name', '=', 'TWD'),
             ('company_id', 'in', [self.env.company.id, False]),
         ], limit=1)
+
+    @api.model
+    def _wc_line_tax_vals(self, wc_line):
+        """Odoo taxes for one imported line: WooCommerce already decided what the customer paid.
+
+        A line WooCommerce charged no tax on gets no Odoo tax. Otherwise the product's sale
+        tax would apply (products created in Odoo get the company's default sale tax) and the
+        order total would exceed the amount paid. A line WooCommerce taxed keeps the product's
+        taxes, as before.
+        """
+        if float(wc_line.get('total_tax') or 0):
+            return {}
+        return {'tax_id': [Command.clear()]}
 
     def _process_wc_order(self, data, queue_item):
         wc_order_id = data.get('id')
@@ -719,6 +732,7 @@ class WcSyncQueue(models.Model):
             lines.append((0, 0, {
                 'product_id': product.id, 'product_uom_qty': qty,
                 'price_unit': price_unit, 'name': wc_name,
+                **self._wc_line_tax_vals(item),
             }))
         return lines
 
@@ -735,6 +749,7 @@ class WcSyncQueue(models.Model):
             lines.append((0, 0, {
                 'product_id': product.id, 'product_uom_qty': 1,
                 'price_unit': total, 'name': f"[Shipping] {method_title}",
+                **self._wc_line_tax_vals(sl),
             }))
         return lines
 
@@ -751,6 +766,7 @@ class WcSyncQueue(models.Model):
             lines.append((0, 0, {
                 'product_id': product.id, 'product_uom_qty': 1,
                 'price_unit': total, 'name': f"[Fee] {fee_name}",
+                **self._wc_line_tax_vals(fl),
             }))
         return lines
 

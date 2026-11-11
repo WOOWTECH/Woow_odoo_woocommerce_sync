@@ -207,6 +207,10 @@ odoo -d <測試資料庫> -i wc_base_connector,wc_order_sync --test-enable --sto
 
 ## 版本紀錄
 
+### wc_order_sync 18.0.3.0.2
+
+- 匯入的明細照網店的稅：網店沒收稅的明細（商品、運費、手續費、待確認網店商品）在 Odoo 也不加稅。之前會帶上商品的預設銷項稅，訂單金額比客人實付多。網店有收稅的明細照舊用商品的稅。已匯入的訂單不會變動。
+
 ### wc_base_connector 18.0.1.0.1／wc_order_sync 18.0.3.0.1（資安修正）
 
 - 網店帳密與 webhook 密鑰不再回傳給系統設定管理員以外的使用者（`res.config.settings.default_get`／`get_values`，欄位限「設定」權限）。

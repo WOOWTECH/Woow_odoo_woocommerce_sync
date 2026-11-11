@@ -268,6 +268,13 @@ odoo -d <test db> -i wc_base_connector,wc_order_sync --test-enable --stop-after-
 
 ## Changelog
 
+### wc_order_sync 18.0.3.0.2
+
+- Imported lines follow WooCommerce's tax. A line WooCommerce charged no tax on (product,
+  shipping, fee, or the unmatched-line placeholder) gets no Odoo tax; before, the product's
+  default sale tax was added and the order total exceeded the amount paid. Lines
+  WooCommerce taxed keep the product's taxes. Orders already imported are not changed.
+
 ### wc_base_connector 18.0.1.0.1 / wc_order_sync 18.0.3.0.1 (security)
 
 - Store credentials and the webhook secret are no longer returned to users who are not
