@@ -115,7 +115,7 @@ English: [README.md](README.md)
 
 ### 網店端設定
 
-每個主題（訂單建立、訂單更新）**只設一組** webhook，送達網址 `https://<odoo 網址>/wc_sync/webhook`，密鑰與 Odoo 相同。若另有一組用舊密鑰的 webhook，每次都會被拒收；日誌會寫出是哪一組（`Invalid signature (webhook id=…, topic=…)`），到網店後台刪掉即可。
+每個主題（訂單建立、訂單更新）**只設一組** webhook，送達網址 `https://<odoo 網址>/wc_sync/webhook`，密鑰與 Odoo 相同。若另有一組用舊密鑰的 webhook，每次都會被拒收；日誌會寫出是哪一組（`Invalid signature (webhook id=…, topic=…)`），到網店後台刪掉即可。若日誌是 `webhook id=?, topic=?, source=?, delivery=?`，表示這個請求沒有 WooCommerce webhook 標頭，例如 WooCommerce 自己的 webhook 測試請求（表單內容 `webhook_id=<編號>`）或其他外掛；後面記的標頭名稱、內容類型和大小可以分辨是哪一種。
 
 ## 監控
 
@@ -166,7 +166,7 @@ English: [README.md](README.md)
 |---|---|
 | 警示「超過 N 小時沒有成功從網店抓單」 | 伺服器日誌 `WC Sync: fetch failed with HTTP …`；檢查網址與應用程式密碼（設定 › WooCommerce › 測試連線）。 |
 | 訂單行掛在「待確認網店商品」 | 「WooCommerce › 商品對應表」標色的列，指定 Odoo 商品。 |
-| 日誌出現 `WC Webhook: Invalid signature` | 網店有一組 webhook 的密鑰不同，日誌會寫出它的編號。 |
+| 日誌出現 `WC Webhook: Invalid signature` | 網店有一組 webhook 的密鑰不同，日誌會寫出它的編號；若是 `webhook id=?`，請求沒有 WooCommerce webhook 標頭（例如 WooCommerce 的 webhook 測試請求或其他外掛），看日誌記的標頭名稱、內容類型和大小分辨。 |
 | 日誌出現 `WC Webhook: Rejected, no webhook secret is configured` | 到「設定 › WooCommerce › Webhook 密鑰」填入網店 webhook 的密鑰。 |
 | 執行資料修復時出現存取錯誤 | 請在 Odoo shell 執行；網頁介面與 RPC 都不能呼叫。 |
 | 訂單在「一般消費者」名下 | 那張網店訂單沒有 email 也沒有電話。 |
@@ -206,6 +206,10 @@ odoo -d <測試資料庫> -i wc_base_connector,wc_order_sync --test-enable --sto
 ```
 
 ## 版本紀錄
+
+### wc_order_sync 18.0.3.0.3
+
+- 簽章不符被拒收的 webhook 通知，日誌會記下它帶的標頭數量與名稱、內容類型和大小（宣告的與實際讀到的），沒有 WooCommerce webhook 標頭的送件（`webhook id=?`）也能找出來源。除了 WooCommerce 的 4 個 webhook 識別資料、內容類型和宣告長度，不記標頭的值，也不記內容；記下的值只留可見的 ASCII 字元並限制長度。
 
 ### wc_order_sync 18.0.3.0.2
 

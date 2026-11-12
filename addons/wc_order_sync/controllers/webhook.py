@@ -17,6 +17,11 @@ _logger = logging.getLogger(__name__)
 WEBHOOK_MAX_CONTENT_LENGTH = 2 * 1024 * 1024
 
 
+def _log_safe(value, limit=80):
+    """An untrusted request value made safe for one log line: printable ASCII only, capped."""
+    return ''.join(c if '!' <= c <= '~' else '?' for c in str(value)[:limit])
+
+
 def _webhook_signature(secret, raw_body):
     """WooCommerce's X-WC-Webhook-Signature: base64(HMAC-SHA256(secret, raw body bytes))."""
     digest = hmac.new(secret.encode('utf-8'), raw_body, hashlib.sha256).digest()
@@ -51,10 +56,24 @@ class WcWebhookController(http.Controller):
 
         def _describe():
             # Name the webhook, so a stale duplicate configured in WooCommerce
-            # with an old secret can be found and removed there.
-            return "webhook id=%s, topic=%s, source=%s, delivery=%s" % (
-                headers.get('X-WC-Webhook-ID', '?'), headers.get('X-WC-Webhook-Topic', '?'),
-                headers.get('X-WC-Webhook-Source', '?'), headers.get('X-WC-Webhook-Delivery-ID', '?'))
+            # with an old secret can be found and removed there. "?" for all four
+            # means the request is not a WooCommerce webhook delivery.
+            return "webhook id=%s, topic=%s, source=%s, delivery=%s" % tuple(
+                _log_safe(headers.get(name, '?')) for name in (
+                    'X-WC-Webhook-ID', 'X-WC-Webhook-Topic', 'X-WC-Webhook-Source',
+                    'X-WC-Webhook-Delivery-ID'))
+
+        def _sender_shape(raw_body):
+            # A rejected delivery described without other header values or body content:
+            # header names (plugins often add their own) identify the code that sends it.
+            # Odoo parses form bodies before this runs (nothing is left to read), so the
+            # declared length is logged next to the bytes actually read.
+            names = sorted({_log_safe(name.lower(), 60) for name in headers.keys()})
+            content_type = _log_safe((headers.get('Content-Type') or '?').split(';')[0].strip(), 60)
+            declared = request.httprequest.content_length
+            return "headers(%d)=[%s], content_type=%s, declared_bytes=%s, read_bytes=%d" % (
+                len(names), ', '.join(names[:40]), content_type,
+                '?' if declared is None else declared, len(raw_body))
 
         def _too_large():
             _logger.warning("WC Webhook: Rejected, body larger than %d bytes (%s)",
@@ -82,7 +101,8 @@ class WcWebhookController(http.Controller):
 
             signature = headers.get('X-WC-Webhook-Signature', '').strip().encode('utf-8')
             if not hmac.compare_digest(signature, _webhook_signature(secret, raw_body)):
-                _logger.warning("WC Webhook: Invalid signature (%s)", _describe())
+                _logger.warning("WC Webhook: Invalid signature (%s; %s)",
+                                _describe(), _sender_shape(raw_body))
                 return _resp({'status': 'error', 'message': 'invalid signature'}, 401)
 
             body = raw_body.decode('utf-8', errors='replace')

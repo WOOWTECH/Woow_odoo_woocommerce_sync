@@ -153,7 +153,10 @@ Shipped statuses (validate the delivery): `completed`, `wmp-shipped`, `wmp-in-tr
 Configure **one** webhook per topic (order created, order updated) with delivery URL
 `https://<odoo>/wc_sync/webhook` and the same secret as in Odoo. A second webhook with an
 old secret is rejected on every delivery; the log names it
-(`Invalid signature (webhook id=…, topic=…)`) so it can be deleted in WooCommerce.
+(`Invalid signature (webhook id=…, topic=…)`) so it can be deleted in WooCommerce. When the
+log shows `webhook id=?, topic=?, source=?, delivery=?`, the request carries no WooCommerce
+webhook headers: for example WooCommerce's webhook ping (form body `webhook_id=<id>`) or
+another plugin. The header names, media type and size logged after it tell which.
 
 ## Monitoring
 
@@ -223,7 +226,7 @@ so only the customer and addresses change.
 |---|---|
 | Alert *超過 N 小時沒有成功從網店抓單* | Server log `WC Sync: fetch failed with HTTP …`; check the store URL and application password (*Settings › WooCommerce › Test Connection*). |
 | Order lines on **待確認網店商品** | *WooCommerce › Product Mapping*, rows highlighted; set the Odoo product. |
-| Log `WC Webhook: Invalid signature` | A webhook in WooCommerce has a different secret; the log names its id. |
+| Log `WC Webhook: Invalid signature` | A webhook in WooCommerce has a different secret; the log names its id. With `webhook id=?` the request carries no WooCommerce webhook headers (for example WooCommerce's webhook ping or another plugin); the logged header names, media type and size tell which. |
 | Log `WC Webhook: Rejected, no webhook secret is configured` | Set *Settings › WooCommerce › Webhook Secret* to the secret of the WooCommerce webhook. |
 | *Access error* when running a data repair | Run it in an Odoo shell; it is not callable from the web client or RPC. |
 | Order on **一般消費者** | The WC order carried neither e-mail nor phone. |
@@ -267,6 +270,15 @@ odoo -d <test db> -i wc_base_connector,wc_order_sync --test-enable --stop-after-
 ```
 
 ## Changelog
+
+### wc_order_sync 18.0.3.0.3
+
+- A webhook delivery rejected for its signature is logged with the number and names of its
+  headers, its media type and its size (declared and read), so its sender can be identified,
+  also when it carries no WooCommerce webhook headers (`webhook id=?`). Apart from the four
+  WooCommerce webhook identifiers, the media type and the declared length, header values and
+  the body are not logged; logged request values are limited to visible ASCII and capped in
+  length.
 
 ### wc_order_sync 18.0.3.0.2
 
