@@ -3,3 +3,4 @@ from . import test_wc_security_http
 from . import test_wc_like_escape
 from . import test_wc_order_pricelist
 from . import test_wc_order_tax
+from . import test_wc_webhook_diag
